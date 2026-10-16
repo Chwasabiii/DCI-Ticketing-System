@@ -36,13 +36,17 @@ export function getNavItems(
       { label: "Incoming Queue", href: "/queue", icon: "inbox" },
       { label: "All Tickets", href: "/tickets", icon: "clipboard" },
       { label: "Users", href: "/admin/users", icon: "users" },
+      { label: "Projects", href: "/admin/projects", icon: "clipboard" },
       { label: "Departments", href: "/admin/departments", icon: "workflow" },
       { label: "Disciplines", href: "/admin/disciplines", icon: "shield" },
       { label: "Categories", href: "/admin/categories", icon: "clipboard" }
     ];
   }
 
-  const items: NavItem[] = [{ label: "Dashboard", href: "/dashboard", icon: "home" }];
+  const items: NavItem[] = [
+    { label: "Dashboard", href: "/dashboard", icon: "home" },
+    { label: "Submit a Ticket", href: "/tickets/new", icon: "plus" }
+  ];
 
   if (roles.includes("Coordinator")) {
     items.push({ label: "Incoming Queue", href: "/queue", icon: "inbox" });

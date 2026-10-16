@@ -25,6 +25,7 @@ create table public.profiles (
   email         text,
   user_side     public.user_side not null default 'client',
   status        text not null default 'active',          -- active / inactive (archived)
+  invitation_pending boolean not null default false,
   department_id bigint references public.departments(id),
   created_at    timestamptz not null default now()
 );
@@ -66,7 +67,8 @@ create table public.projects (
   project_code text unique,
   name         text not null,
   location     text,
-  status       text not null default 'active'
+  status       text not null default 'planned'
+                 check (status in ('planned', 'ongoing', 'completed'))
 );
 
 create sequence public.ticket_no_seq;   -- note: does not reset each year
@@ -164,6 +166,36 @@ end $$;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+create or replace function public.complete_invitation(p_full_name text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null
+     or p_full_name is null
+     or length(btrim(p_full_name)) = 0
+     or length(btrim(p_full_name)) > 200 then
+    raise exception 'A valid signed-in user and name are required';
+  end if;
+
+  update public.profiles
+  set full_name = btrim(p_full_name),
+      invitation_pending = false
+  where id = auth.uid()
+    and status = 'active'
+    and invitation_pending = true;
+
+  if not found then
+    raise exception 'No active pending invitation was found';
+  end if;
+end;
+$$;
+
+revoke all on function public.complete_invitation(text) from public;
+grant execute on function public.complete_invitation(text) to authenticated;
 
 -- 4b. Keep updated_at current
 create or replace function public.set_updated_at()
@@ -399,9 +431,9 @@ insert into public.disciplines (name) values
 insert into public.departments (name) values
   ('Project Engineering'), ('Project Controls'), ('Site Operations');
 
-insert into public.projects (project_code, name, location) values
-  ('HVT-01', 'Harborview Tower',     'Sample City'),
-  ('NGH-02', 'Northgate Logistics Hub', 'Sample City');
+insert into public.projects (project_code, name, location, status) values
+  ('HVT-01', 'Harborview Tower',     'Sample City', 'ongoing'),
+  ('NGH-02', 'Northgate Logistics Hub', 'Sample City', 'planned');
 
 -- ---------- 9. AFTER YOUR FIRST SIGN-UP ------------------------------
 -- Make yourself the first admin (replace the email), then run it:

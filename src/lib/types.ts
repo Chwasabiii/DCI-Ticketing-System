@@ -18,6 +18,8 @@ export type TicketStatus =
 
 export type Priority = "low" | "medium" | "high" | "urgent";
 
+export type ProjectStatus = "planned" | "ongoing" | "completed";
+
 export type Department = {
   id: string | number;
   name: string;
@@ -28,6 +30,7 @@ export type Project = {
   project_code?: string | null;
   name: string;
   location?: string | null;
+  status: ProjectStatus;
 };
 
 export type Profile = {

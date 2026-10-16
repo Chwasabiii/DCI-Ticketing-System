@@ -4,7 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { Comment, EmployeeRole, Priority, TicketStatus, UserSide } from "@/lib/types";
+import type {
+  Comment,
+  EmployeeRole,
+  Priority,
+  ProjectStatus,
+  TicketStatus,
+  UserSide
+} from "@/lib/types";
 
 function value(formData: FormData, name: string) {
   const raw = formData.get(name);
@@ -102,9 +109,32 @@ export async function inviteUser(formData: FormData) {
     };
   }
 
+  const configuredSiteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.NODE_ENV === "development" ? "http://localhost:3000" : null);
+  if (!configuredSiteUrl) {
+    return { error: "Set NEXT_PUBLIC_SITE_URL to this app's public URL before sending invitations." };
+  }
+
+  let siteUrl: string;
+  try {
+    const parsedSiteUrl = new URL(configuredSiteUrl);
+    if (
+      !["http:", "https:"].includes(parsedSiteUrl.protocol) ||
+      parsedSiteUrl.username ||
+      parsedSiteUrl.password
+    ) {
+      return { error: "NEXT_PUBLIC_SITE_URL must be a valid http or https app URL." };
+    }
+    siteUrl = parsedSiteUrl.origin;
+  } catch {
+    return { error: "NEXT_PUBLIC_SITE_URL must be a valid http or https app URL." };
+  }
+
   const { data: invitation, error: inviteError } =
     await adminClient.auth.admin.inviteUserByEmail(email, {
-      data: { full_name: fullName }
+      data: { full_name: fullName },
+      redirectTo: `${siteUrl}/auth/callback`
     });
 
   if (inviteError || !invitation.user) {
@@ -113,7 +143,13 @@ export async function inviteUser(formData: FormData) {
 
   const { error: profileError } = await adminClient
     .from("profiles")
-    .update({ full_name: fullName, email, user_side: userSide, status: "active" })
+    .update({
+      full_name: fullName,
+      email,
+      user_side: userSide,
+      status: "active",
+      invitation_pending: true
+    })
     .eq("id", invitation.user.id);
 
   if (profileError) {
@@ -150,6 +186,86 @@ export async function inviteUser(formData: FormData) {
   return { success: `Invitation sent to ${email}.` };
 }
 
+export async function verifyInvitation(formData: FormData) {
+  const tokenHash = value(formData, "token_hash");
+  if (!tokenHash || tokenHash.length > 2048) {
+    return { error: "The invitation link is missing or invalid. Ask an administrator to send a new invitation." };
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase.auth.verifyOtp({
+    token_hash: tokenHash,
+    type: "invite"
+  });
+  if (error) {
+    if (error.code === "otp_expired") {
+      return { error: "This invitation link has expired or has already been used. Ask an administrator to send a new invitation." };
+    }
+    return { error: `The invitation could not be verified: ${error.message}` };
+  }
+
+  revalidatePath("/accept-invitation");
+  return { success: true };
+}
+
+export async function completeInvitation(formData: FormData) {
+  const fullName = value(formData, "full_name");
+  const password = formData.get("password");
+  const confirmPassword = formData.get("confirm_password");
+
+  if (!fullName || fullName.length > 200) {
+    return { error: "Enter your name (up to 200 characters)." };
+  }
+  if (typeof password !== "string" || password.length < 8 || password.length > 128) {
+    return { error: "Choose a password between 8 and 128 characters." };
+  }
+  if (password !== confirmPassword) {
+    return { error: "The passwords do not match." };
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+    error: userError
+  } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return { error: "This invitation link is invalid or has expired. Ask an administrator to send a new invitation." };
+  }
+
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("invitation_pending, status")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (profileError) {
+    return { error: `Could not verify your invitation: ${profileError.message}` };
+  }
+  if (profile?.invitation_pending !== true || profile.status !== "active") {
+    return { error: "This account does not have a pending invitation. Sign in or contact an administrator." };
+  }
+
+  const { error: authUpdateError } = await supabase.auth.updateUser({
+    password,
+    data: { full_name: fullName }
+  });
+  if (authUpdateError) {
+    return { error: `Your password could not be saved: ${authUpdateError.message}` };
+  }
+
+  const { error: completionError } = await supabase.rpc("complete_invitation", {
+    p_full_name: fullName
+  });
+  if (completionError) {
+    return {
+      error: `Your password was saved, but your profile could not be completed: ${completionError.message}. Please submit the form again or contact an administrator.`
+    };
+  }
+
+  revalidatePath("/settings");
+  revalidatePath("/admin/users");
+  return { success: true };
+}
+
 export async function reactivateUser(formData: FormData) {
   const supabase = createClient();
   const {
@@ -177,6 +293,91 @@ export async function reactivateUser(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+export async function createProject(formData: FormData) {
+  const supabase = createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to add projects." };
+
+  const { data: actor } = await supabase
+    .from("profiles")
+    .select("user_side, status")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (actor?.user_side !== "admin" || actor.status !== "active") {
+    return { error: "Only active administrators can manage projects." };
+  }
+
+  const name = value(formData, "name");
+  const projectCode = value(formData, "project_code");
+  const location = value(formData, "location");
+  const requestedStatus = value(formData, "status");
+  const status: ProjectStatus | null =
+    requestedStatus === "planned" || requestedStatus === "ongoing"
+      ? requestedStatus
+      : null;
+
+  if (!name || !status) {
+    return { error: "Enter a project name and select Planned or Ongoing." };
+  }
+  if (name.length > 200 || (projectCode?.length ?? 0) > 100 || (location?.length ?? 0) > 200) {
+    return { error: "Project name, code, or location is too long." };
+  }
+
+  const { error } = await supabase.from("projects").insert({
+    name,
+    project_code: projectCode,
+    location,
+    status
+  });
+  if (error) return { error: `The project could not be added: ${error.message}` };
+
+  revalidatePath("/admin/projects");
+  revalidatePath("/api/reference-data");
+  revalidatePath("/tickets/new");
+  return { success: `Project "${name}" added.` };
+}
+
+export async function updateProjectStatus(formData: FormData) {
+  const supabase = createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to update projects." };
+
+  const { data: actor } = await supabase
+    .from("profiles")
+    .select("user_side, status")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (actor?.user_side !== "admin" || actor.status !== "active") {
+    return { error: "Only active administrators can manage projects." };
+  }
+
+  const projectId = value(formData, "project_id");
+  const requestedStatus = value(formData, "status");
+  const statuses: ProjectStatus[] = ["planned", "ongoing", "completed"];
+  const status = statuses.find((option) => option === requestedStatus);
+  if (!projectId || !/^\d+$/.test(projectId) || !status) {
+    return { error: "Select a valid project and status." };
+  }
+
+  const { data: project, error } = await supabase
+    .from("projects")
+    .update({ status })
+    .eq("id", projectId)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: `The project status could not be updated: ${error.message}` };
+  if (!project) return { error: "The project was not found or could not be updated." };
+
+  revalidatePath("/admin/projects");
+  revalidatePath("/api/reference-data");
+  revalidatePath("/tickets/new");
+  return { success: "Project status updated." };
+}
+
 export async function createTicket(formData: FormData) {
   const supabase = createClient();
   const {
@@ -187,12 +388,29 @@ export async function createTicket(formData: FormData) {
 
   const title = value(formData, "title");
   const description = value(formData, "description");
+  const projectId = value(formData, "project_id");
   const requestedPriority = value(formData, "priority");
   const priorities: Priority[] = ["low", "medium", "high", "urgent"];
   const priority = priorities.find((option) => option === requestedPriority) ?? "medium";
 
   if (!title || !description) {
     return { error: "Enter a title and details for your request." };
+  }
+
+  if (projectId) {
+    if (!/^\d+$/.test(projectId)) {
+      return { error: "Select a valid project." };
+    }
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("id")
+      .eq("id", projectId)
+      .in("status", ["planned", "ongoing"])
+      .maybeSingle();
+    if (projectError) {
+      return { error: `Could not validate the selected project: ${projectError.message}` };
+    }
+    if (!project) return { error: "Select a Planned or Ongoing project." };
   }
 
   const { data: ticket, error } = await supabase
@@ -202,7 +420,7 @@ export async function createTicket(formData: FormData) {
       description,
       requester_id: user.id,
       department_id: value(formData, "department_id"),
-      project_id: value(formData, "project_id"),
+      project_id: projectId,
       category_id: value(formData, "category_id"),
       discipline_id: value(formData, "discipline_id"),
       priority,

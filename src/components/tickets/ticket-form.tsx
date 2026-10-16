@@ -200,7 +200,8 @@ export function TicketForm() {
             <option value="">{referencesLoaded ? "Select project" : "Loading projects..."}</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
-                {project.project_code ? `${project.project_code} - ` : ""}{project.name}
+                {project.project_code ? `${project.project_code} - ` : ""}
+                {project.name} ({project.status === "planned" ? "Planned" : "Ongoing"})
               </option>
             ))}
           </select>

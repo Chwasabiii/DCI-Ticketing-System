@@ -25,7 +25,11 @@ export async function GET() {
     supabase.from("categories").select("id, name, discipline_id").order("name"),
     supabase.from("disciplines").select("id, name, lead_user_id").order("name"),
     supabase.from("departments").select("id, name").order("name"),
-    supabase.from("projects").select("id, project_code, name, location").order("name")
+    supabase
+      .from("projects")
+      .select("id, project_code, name, location, status")
+      .in("status", ["planned", "ongoing"])
+      .order("name")
   ]);
 
   if (

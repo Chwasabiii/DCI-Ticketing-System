@@ -34,6 +34,7 @@ export async function updateSession(request: NextRequest) {
   const isPublic =
     isAuthRoute ||
     request.nextUrl.pathname.startsWith("/auth") ||
+    request.nextUrl.pathname === "/accept-invitation" ||
     request.nextUrl.pathname === "/account-archived";
 
   if (!user && !isPublic) {

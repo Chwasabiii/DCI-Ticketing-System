@@ -20,7 +20,7 @@ The application has pages and initial behavior for much of this flow. Some secti
 
 - **Client:** Submit tickets, view their requests, comment, and confirm a resolved request.
 - **Employee:** Staff access is further divided into Coordinator, Discipline Lead, Personnel, and Manager roles. These roles influence navigation and available ticket actions.
-- **Admin:** View user and reference-data tables and administer account-side setup through Supabase.
+- **Admin:** Invite users and manage the projects available when clients and employees submit support requests.
 
 The database policies also control which records can be read or changed. UI visibility is not a substitute for database authorization; review and test both before deployment.
 
@@ -37,7 +37,8 @@ Implemented in the current prototype:
 Still incomplete or needing confirmation:
 
 - Notifications page is a placeholder; the schema has a notifications table, but the app does not yet populate and display notifications.
-- Admins can invite client and employee accounts by email; department, discipline, and category management pages remain read-only tables.
+- Admins can invite client and employee accounts by email and manage project names, codes, locations, and Planned/Ongoing/Completed statuses. Ticket submitters can select Planned and Ongoing projects.
+- Department, discipline, and category management pages remain read-only tables.
 - Accounts with no sign-in for six months are marked inactive (not deleted); admins are excluded and can restore archived accounts.
 - The dashboard's discipline mix uses illustrative values rather than counts calculated from tickets.
 - Ticket file uploads are available from ticket submission and ticket details. Cost tables exist in the schema but are not wired into the user interface.
@@ -56,7 +57,7 @@ Still incomplete or needing confirmation:
 - **Row Level Security (RLS)** applies database access rules to signed-in users.
 - **Supabase Storage** keeps ticket attachments private; ticket-scoped policies and expiring download links control access.
 
-The ticket form's category and discipline lookup response is cached privately in the browser for 60 seconds. Ticket, profile, and other user-specific records are not placed in a shared persistent cache.
+The ticket form's category, discipline, department, and project lookup response is cached privately in the browser for 60 seconds. Ticket, profile, and other user-specific records are not placed in a shared persistent cache.
 
 ## Folder Guide
 
@@ -99,6 +100,7 @@ In Next.js, a `page.tsx` file defines a page. For example, `src/app/(app)/ticket
 | `/notifications` | Placeholder for user notifications. |
 | `/settings` | View the signed-in user's account and roles. |
 | `/admin/users` | View user records. |
+| `/admin/projects` | Add projects and update their status. |
 | `/admin/departments` | View department records. |
 | `/admin/disciplines` | View discipline records. |
 | `/admin/categories` | View category records. |
@@ -119,6 +121,8 @@ The matching source file is under `src/app/`. For example, `/tickets/new` is imp
    If the project already has the original schema installed, run `supabase/migrations/20261012_ticket_attachments.sql` instead to apply the attachment bucket limit and ticket-scoped access policies.
    Run `supabase/migrations/20261012_ticket_comments_realtime.sql` to enable live comment updates on an existing database.
    Run `supabase/migrations/20261012_admin_accounts_and_auto_archive.sql` on an existing database to restrict archived-account access and schedule the daily six-month inactivity archive.
+   Run `supabase/migrations/20261015_project_statuses.sql` on an existing database to add Planned/Ongoing/Completed project statuses.
+   Run `supabase/migrations/20261015_invitation_acceptance.sql` on an existing database to enable invitees to set their own password and profile name.
 3. Create a test user in Supabase Authentication. The project currently has a sign-in page, not a public sign-up page.
 4. For the first administrator, update the new user's profile in the SQL Editor, replacing the email:
 
@@ -129,8 +133,15 @@ The matching source file is under `src/app/`. For example, `/tickets/new` is imp
    ```
 
 5. In Supabase Authentication settings, disable public sign-ups so new accounts are created by administrator invitation only. Configure email delivery for invitation links.
-6. Add the Supabase service-role key to the server's `.env.local` as `SUPABASE_SERVICE_ROLE_KEY`. It is used only by the admin invitation action; never prefix it with `NEXT_PUBLIC_` or expose it to browser code.
-7. Review the SQL policies, invitation roles, and archiving rules with the project owner. The schema itself labels these access rules as proposed.
+6. Add the Supabase service-role key to the server's `.env.local` as `SUPABASE_SERVICE_ROLE_KEY`. It is used by admin invitations and archived-account reactivation; never prefix it with `NEXT_PUBLIC_` or expose it to browser code.
+7. In **Authentication > Email Templates > Invite user**, set the invitation link to:
+
+   ```html
+   <a href="{{ .RedirectTo }}?token_hash={{ .TokenHash }}&amp;type=invite&amp;next=/accept-invitation">Accept your invitation</a>
+   ```
+
+   `.RedirectTo` uses the app URL passed by the invitation action. The invite link first opens an acceptance page; the invitee must click **Accept invitation** to verify it. This prevents email security scanners that automatically open links from consuming the one-time token. Add the callback URL (for example `http://localhost:3000/auth/callback` and your deployed `https://your-app.example/auth/callback`) to **Authentication > URL Configuration > Redirect URLs**. Set `NEXT_PUBLIC_SITE_URL` to the app's origin in `.env.local` and in the deployed server environment.
+8. Review the SQL policies, invitation roles, and archiving rules with the project owner. The schema itself labels these access rules as proposed.
 
 ### Configure and Start the App
 
@@ -140,6 +151,7 @@ The matching source file is under `src/app/`. For example, `/tickets/new` is imp
    NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
    SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_ONLY_SERVICE_ROLE_KEY
+   NEXT_PUBLIC_SITE_URL=http://localhost:3000
    ```
 
 2. Install packages and start the development server:
