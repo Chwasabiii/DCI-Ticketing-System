@@ -2,6 +2,21 @@ import { createClient } from "@/lib/supabase/client";
 
 export const MAX_TICKET_ATTACHMENTS = 5;
 export const MAX_TICKET_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+export const ACCEPTED_TICKET_ATTACHMENT_TYPES = [
+  ".pdf", ".jpg", ".jpeg", ".png", ".txt", ".csv", ".doc", ".docx",
+  ".xls", ".xlsx", ".ppt", ".pptx"
+].join(",");
+
+const acceptedExtensions = new Set(ACCEPTED_TICKET_ATTACHMENT_TYPES.split(","));
+const fallbackMimeTypes: Record<string, string> = {
+  pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+  txt: "text/plain", csv: "text/csv", doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+};
 
 export function validateTicketAttachments(files: File[]) {
   if (files.length > MAX_TICKET_ATTACHMENTS) {
@@ -16,6 +31,14 @@ export function validateTicketAttachments(files: File[]) {
     return `Each file must be 10 MB or smaller: ${oversizedFiles
       .map((file) => file.name)
       .join(", ")}`;
+  }
+
+  const unsupportedFiles = files.filter((file) => {
+    const extension = `.${file.name.split(".").pop()?.toLocaleLowerCase() ?? ""}`;
+    return !acceptedExtensions.has(extension);
+  });
+  if (unsupportedFiles.length > 0) {
+    return `These file types are not supported: ${unsupportedFiles.map((file) => file.name).join(", ")}. Choose PDF, image, text, CSV, or Office files.`;
   }
 
   return null;
@@ -37,12 +60,13 @@ export async function uploadTicketAttachments(
 
   for (const file of files) {
     const filePath = `${ticketId}/${userId}/${crypto.randomUUID()}`;
+    const extension = file.name.split(".").pop()?.toLocaleLowerCase() ?? "";
 
     try {
       const { error: uploadError } = await supabase.storage
         .from("ticket-attachments")
         .upload(filePath, file, {
-          contentType: file.type || "application/octet-stream",
+          contentType: file.type || fallbackMimeTypes[extension] || "application/octet-stream",
           upsert: false
         });
 

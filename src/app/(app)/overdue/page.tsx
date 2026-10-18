@@ -1,12 +1,10 @@
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { getTickets } from "@/lib/data";
+import { isTicketOverdue } from "@/lib/utils";
 
 export default async function OverduePage() {
   const tickets = (await getTickets(200)).filter(
-    (ticket) =>
-      ticket.due_date &&
-      new Date(ticket.due_date) < new Date() &&
-      !["resolved", "closed"].includes(ticket.status)
+    (ticket) => isTicketOverdue(ticket)
   );
 
   return (

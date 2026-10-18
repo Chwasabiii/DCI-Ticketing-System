@@ -1,0 +1,213 @@
+"use client";
+
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Bookmark, Trash2 } from "lucide-react";
+import { TicketTable } from "@/components/tickets/ticket-table";
+import { bulkUpdateTickets } from "@/lib/actions";
+import { FeedbackMessage } from "@/components/ui/feedback-message";
+import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
+import type { Profile, Ticket, TicketSlaPolicy } from "@/lib/types";
+import { getTicketSlaIndicators, isTicketOverdue } from "@/lib/utils";
+
+type TriageView = "all" | "unassigned" | "mine" | "approval" | "overdue";
+type SavedView = { id: string; name: string; view: TriageView; priority: string; status: string; projectId: string };
+const savedViewsStorageKey = "pmsg-triage-saved-views-v1";
+
+const views: Array<{ id: TriageView; label: string }> = [
+  { id: "all", label: "All active" },
+  { id: "unassigned", label: "Unassigned" },
+  { id: "mine", label: "Assigned to me" },
+  { id: "approval", label: "Waiting for my approval" },
+  { id: "overdue", label: "Overdue" }
+];
+
+const activeStatuses = new Set([
+  "open", "under_review", "assigned", "in_progress", "waiting_for_info"
+]);
+export function TicketTriageInbox({
+  tickets,
+  currentUserId,
+  approvableProjectIds,
+  slaPolicies = [],
+  employees = [],
+  canAssign = false,
+  canChangeStatus = false,
+  initialView = "all"
+}: {
+  tickets: Ticket[];
+  currentUserId: string;
+  approvableProjectIds: string[];
+  slaPolicies?: TicketSlaPolicy[];
+  employees?: Profile[];
+  canAssign?: boolean;
+  canChangeStatus?: boolean;
+  initialView?: TriageView;
+}) {
+  const router = useRouter();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
+  const [view, setView] = useState<TriageView>(initialView);
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [saveName, setSaveName] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkAssignee, setBulkAssignee] = useState("");
+  const [bulkStatus, setBulkStatus] = useState("in_progress");
+  const [bulkFeedback, setBulkFeedback] = useState<{ type: "error" | "success"; text: string } | null>(null);
+  const [bulkPending, startBulkTransition] = useTransition();
+  const approvableProjects = useMemo(() => new Set(approvableProjectIds), [approvableProjectIds]);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(savedViewsStorageKey) ?? "[]") as SavedView[];
+      setSavedViews(Array.isArray(stored) ? stored.filter((item) => item && typeof item.id === "string" && typeof item.name === "string" && views.some((option) => option.id === item.view)).map((item) => ({ ...item, priority: item.priority ?? "all", status: item.status ?? "all", projectId: item.projectId ?? "all" })) : []);
+    } catch { setSavedViews([]); }
+  }, []);
+
+  function persistSavedViews(next: SavedView[]) {
+    setSavedViews(next);
+    localStorage.setItem(savedViewsStorageKey, JSON.stringify(next));
+  }
+
+  function saveCurrentView() {
+    const name = saveName.trim();
+    if (!name || (savedViews.length >= 10 && !savedViews.some((item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase()))) return;
+    const next = [...savedViews.filter((item) => item.name.toLocaleLowerCase() !== name.toLocaleLowerCase()), { id: crypto.randomUUID(), name, view, priority: priorityFilter, status: statusFilter, projectId: projectFilter }];
+    persistSavedViews(next);
+    setSaveName("");
+  }
+
+  async function applyBulk(operation: "assign" | "status") {
+    if (!selectedIds.length) return;
+    const selectedEmployee = employees.find((employee) => employee.id === bulkAssignee);
+    const changeLabel = operation === "assign"
+      ? bulkAssignee ? `assign them to ${selectedEmployee?.full_name || selectedEmployee?.email || "the selected employee"}` : "return them to the unassigned queue"
+      : `move them to ${bulkStatus.replaceAll("_", " ")}`;
+    const confirmed = await confirm({
+      title: `${bulkStatus === "resolved" && operation === "status" ? "Resolve" : "Apply a change to"} ${selectedIds.length} ticket${selectedIds.length === 1 ? "" : "s"}?`,
+      description: `This will ${changeLabel}. Review the selected tickets before proceeding.`,
+      confirmLabel: `Apply to ${selectedIds.length} tickets`,
+      danger: operation === "status" && bulkStatus === "resolved"
+    });
+    if (!confirmed) return;
+    const form = new FormData();
+    selectedIds.forEach((id) => form.append("ticket_ids", id));
+    form.set("operation", operation);
+    if (operation === "assign") form.set("assigned_to", bulkAssignee);
+    else form.set("status", bulkStatus);
+    setBulkFeedback(null);
+    startBulkTransition(async () => {
+      try {
+        const result = await bulkUpdateTickets(form);
+        if ("error" in result) setBulkFeedback({ type: "error", text: result.error ?? "Tickets could not be updated." });
+        else {
+          setBulkFeedback({ type: "success", text: result.success ?? "Tickets updated." });
+          setSelectedIds([]);
+          router.refresh();
+        }
+      } catch {
+        setBulkFeedback({ type: "error", text: "Tickets could not be updated. Please try again." });
+      }
+    });
+  }
+
+  function belongsInView(ticket: Ticket, target: TriageView) {
+    const active = activeStatuses.has(ticket.status);
+    if (target === "all") return active;
+    if (target === "unassigned") {
+      return active && !ticket.assigned_to && !["pending", "rejected"].includes(ticket.approval_status ?? "");
+    }
+    if (target === "mine") return active && ticket.assigned_to === currentUserId;
+    if (target === "approval") {
+      return ticket.approval_status === "pending" && ticket.project_id != null && approvableProjects.has(String(ticket.project_id));
+    }
+    return active && (isTicketOverdue(ticket) || getTicketSlaIndicators(ticket, slaPolicies).some((indicator) => indicator.state === "breached"));
+  }
+
+  const projectOptions = Array.from(new Map(tickets.filter((ticket) => ticket.project_id != null).map((ticket) => [String(ticket.project_id), ticket.project?.name ?? `Project ${ticket.project_id}`])).entries());
+  const statusOptions = Array.from(new Set(tickets.filter((ticket) => activeStatuses.has(ticket.status)).map((ticket) => ticket.status))).sort();
+  const visibleTickets = tickets.filter((ticket) => belongsInView(ticket, view)
+    && (priorityFilter === "all" || ticket.priority === priorityFilter)
+    && (statusFilter === "all" || ticket.status === statusFilter)
+    && (projectFilter === "all" || String(ticket.project_id ?? "") === projectFilter));
+  const bulkSelectableTickets = visibleTickets.filter((ticket) => !["pending", "rejected"].includes(ticket.approval_status ?? ""));
+  const nextActions: Record<string, string> = Object.fromEntries(tickets.map((ticket): [string, string] => {
+    let action = "Review request";
+    if (ticket.approval_status === "pending") {
+      action = ticket.project_id != null && approvableProjects.has(String(ticket.project_id))
+        ? "Review project approval"
+        : "Waiting for project approval";
+    } else if (ticket.approval_status === "rejected") {
+      action = "Follow up on rejected approval";
+    } else if (ticket.status === "waiting_for_info") {
+      action = ticket.requester_id === currentUserId ? "Waiting for requester" : "Reply to requester";
+    } else if (ticket.status === "resolved") {
+      action = "Waiting for requester confirmation";
+    } else if (!ticket.assigned_to) {
+      action = "Route and assign";
+    } else if (ticket.assigned_to === currentUserId) {
+      action = "Update ticket status";
+    } else {
+      action = "Assigned to a teammate";
+    }
+    if (isTicketOverdue(ticket)) action = `Overdue - ${action}`;
+    else if (getTicketSlaIndicators(ticket, slaPolicies).some((indicator) => indicator.state === "breached")) action = `SLA overdue - ${action}`;
+    return [String(ticket.id), action];
+  }));
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-5">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-wider text-slate-400">Saved views</p><div className="mt-2 flex flex-wrap gap-2">{savedViews.length ? savedViews.map((saved) => <span key={saved.id} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 ${view === saved.view && priorityFilter === saved.priority && statusFilter === saved.status && projectFilter === saved.projectId ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}><button type="button" onClick={() => { setView(saved.view); setPriorityFilter(saved.priority); setStatusFilter(saved.status); setProjectFilter(saved.projectId); setSelectedIds([]); }} className="text-xs font-semibold text-slate-700 hover:text-accent">{saved.name}</button><button type="button" onClick={() => persistSavedViews(savedViews.filter((item) => item.id !== saved.id))} aria-label={`Remove saved view ${saved.name}`} className="rounded p-0.5 text-slate-400 hover:bg-white hover:text-urgent"><Trash2 className="h-3 w-3" /></button></span>) : <span className="text-xs text-slate-500">Save frequently used inbox filters for quick access.</span>}</div></div>
+          <div className="flex w-full gap-2 sm:w-auto"><input value={saveName} maxLength={40} onChange={(event) => setSaveName(event.target.value)} placeholder="Name this view" aria-label="Saved view name" className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-200 px-3 text-sm focus-ring sm:w-44" /><button type="button" onClick={saveCurrentView} disabled={!saveName.trim() || (savedViews.length >= 10 && !savedViews.some((item) => item.name.toLocaleLowerCase() === saveName.trim().toLocaleLowerCase()))} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Bookmark className="h-4 w-4" /><span className="hidden sm:inline">Save current</span><span className="sm:hidden">Save</span></button></div>
+        </div>
+      </div>
+      {confirmDialog}
+      <div role="group" aria-label="Filter triage inbox" className="flex gap-2 overflow-x-auto pb-1">
+        {views.map(({ id, label }) => {
+          const count = tickets.filter((ticket) => belongsInView(ticket, id)).length;
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={view === id}
+              onClick={() => { setView(id); setSelectedIds([]); }}
+              className={`focus-ring inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition-colors sm:px-4 ${
+                view === id
+                  ? "border-accent bg-blue-50 text-accent"
+                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {label}
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs tabular-nums text-slate-600">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <label className="grid gap-1 text-xs font-semibold text-slate-600">Priority<select value={priorityFilter} onChange={(event) => { setPriorityFilter(event.target.value); setSelectedIds([]); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring"><option value="all">All priorities</option>{["urgent", "high", "medium", "low"].map((priority) => <option key={priority} value={priority}>{priority}</option>)}</select></label>
+        <label className="grid gap-1 text-xs font-semibold text-slate-600">Status<select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setSelectedIds([]); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring"><option value="all">All active statuses</option>{statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
+        <label className="grid gap-1 text-xs font-semibold text-slate-600">Project<select value={projectFilter} onChange={(event) => { setProjectFilter(event.target.value); setSelectedIds([]); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring"><option value="all">All projects</option>{projectOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+      </div>
+      {bulkFeedback && <FeedbackMessage type={bulkFeedback.type}>{bulkFeedback.text}</FeedbackMessage>}
+      {(canAssign || canChangeStatus) && bulkSelectableTickets.length > 0 && <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:p-4">
+        <label className="flex min-h-9 items-center gap-2 text-sm font-semibold text-slate-700"><input type="checkbox" checked={bulkSelectableTickets.length > 0 && bulkSelectableTickets.slice(0, 50).every((ticket) => selectedIds.includes(String(ticket.id)))} onChange={(event) => setSelectedIds(event.target.checked ? bulkSelectableTickets.slice(0, 50).map((ticket) => String(ticket.id)) : selectedIds.filter((id) => !bulkSelectableTickets.slice(0, 50).some((ticket) => String(ticket.id) === id)))} className="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" />Select up to 50 visible</label>
+        {selectedIds.length > 0 && <span className="text-xs text-slate-500">{selectedIds.length} selected (up to 50)</span>}
+        {selectedIds.length > 0 && canAssign && <div className="flex min-w-0 flex-1 gap-2"><select value={bulkAssignee} onChange={(event) => setBulkAssignee(event.target.value)} aria-label="Assign selected tickets to" className="min-h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm focus-ring"><option value="">Unassigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name || employee.email || "Employee"}</option>)}</select><button type="button" onClick={() => applyBulk("assign")} disabled={bulkPending || selectedIds.length > 50} className="min-h-9 rounded-lg bg-navy px-3 text-xs font-semibold text-white disabled:opacity-50">Assign</button></div>}
+        {selectedIds.length > 0 && canChangeStatus && <div className="flex min-w-0 flex-1 gap-2"><select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value)} aria-label="Set selected ticket status" className="min-h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm focus-ring">{["under_review", "assigned", "in_progress", "waiting_for_info", "resolved"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select><button type="button" onClick={() => applyBulk("status")} disabled={bulkPending || selectedIds.length > 50} className="min-h-9 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 disabled:opacity-50">Update</button></div>}
+      </div>}
+      <TicketTable
+        tickets={visibleTickets}
+        nextActions={nextActions}
+        queueActions={{ employees, canAssign, canChangeStatus }}
+        selectedIds={selectedIds}
+        selectableIds={bulkSelectableTickets.map((ticket) => String(ticket.id))}
+        onToggleSelection={(id) => setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length >= 50 ? current : [...current, id])}
+        slaPolicies={slaPolicies}
+      />
+    </section>
+  );
+}

@@ -11,10 +11,10 @@ const privateNoCacheHeaders = {
 export async function GET() {
   const supabase = await createClient();
   const {
-    data: { session }
-  } = await supabase.auth.getSession();
+    data: { user }
+  } = await supabase.auth.getUser();
 
-  if (!session?.user) {
+  if (!user) {
     return NextResponse.json(
       { error: "Sign in to load ticket options." },
       { status: 401, headers: privateNoCacheHeaders }
@@ -25,9 +25,7 @@ export async function GET() {
     categoriesResult,
     disciplinesResult,
     departmentsResult,
-    projectsResult,
-    projectApproversResult,
-    activeProfilesResult
+    projectsResult
   ] = await Promise.all([
     supabase.from("categories").select("id, name, discipline_id").order("name"),
     supabase.from("disciplines").select("id, name, lead_user_id").order("name"),
@@ -36,18 +34,14 @@ export async function GET() {
       .from("projects")
       .select("id, project_code, name, location, status, pm_user_id")
       .in("status", ["planned", "ongoing"])
-      .order("name"),
-    supabase.from("project_approvers").select("project_id, user_id"),
-    supabase.from("profiles").select("id").eq("status", "active")
+      .order("name")
   ]);
 
   if (
     categoriesResult.error ||
     disciplinesResult.error ||
     departmentsResult.error ||
-    projectsResult.error ||
-    projectApproversResult.error ||
-    activeProfilesResult.error
+    projectsResult.error
   ) {
     return NextResponse.json(
       { error: "Could not load ticket options." },
@@ -55,18 +49,21 @@ export async function GET() {
     );
   }
 
-  const activeIds = new Set((activeProfilesResult.data ?? []).map((profile) => profile.id));
-  const activeApproverProjectIds = new Set(
-    (projectApproversResult.data ?? [])
-      .filter((approver) => activeIds.has(approver.user_id))
-      .map((approver) => String(approver.project_id))
-  );
-  const projects = (projectsResult.data ?? [])
-    .filter((project) =>
-      (project.pm_user_id !== null && activeIds.has(project.pm_user_id)) ||
-      activeApproverProjectIds.has(String(project.id))
-    )
-    .map(({ pm_user_id: _pmUserId, ...project }) => project);
+  const eligibleProjects = await Promise.all((projectsResult.data ?? []).map(async (project) => {
+    const { data: eligible, error } = await supabase.rpc("project_has_active_approver", {
+      p_project_id: project.id
+    });
+    return { project, eligible, error };
+  }));
+  if (eligibleProjects.some((result) => result.error)) {
+    return NextResponse.json(
+      { error: "Could not verify project approvers." },
+      { status: 503, headers: privateNoCacheHeaders }
+    );
+  }
+  const projects = eligibleProjects
+    .filter((result) => result.eligible)
+    .map(({ project: { pm_user_id: _pmUserId, ...project } }) => project);
 
   return NextResponse.json(
     {

@@ -13,9 +13,59 @@ import type {
   UserSide
 } from "@/lib/types";
 
+const validUserSides: UserSide[] = ["client", "employee", "admin"];
+
+async function getAdminMutationContext() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to manage accounts." } as const;
+
+  const { data: actor, error } = await supabase
+    .from("profiles")
+    .select("user_side, status")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error || actor?.user_side !== "admin" || actor.status !== "active") {
+    return { error: "Only active administrators can manage accounts." } as const;
+  }
+
+  try {
+    return { actorId: user.id, adminClient: createAdminClient() } as const;
+  } catch (cause) {
+    return {
+      error: cause instanceof Error ? cause.message : "Account management is not configured."
+    } as const;
+  }
+}
+
+function isUuid(id: string | null): id is string {
+  return Boolean(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id));
+}
+
 function value(formData: FormData, name: string) {
   const raw = formData.get(name);
   return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
+async function getActiveTicketActor(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("user_side, status")
+    .eq("id", userId)
+    .maybeSingle();
+  if (profileError) return { error: `Could not verify your account: ${profileError.message}` } as const;
+  if (!profile || profile.status !== "active") return { error: "Your account is not active." } as const;
+  if (profile.user_side !== "employee") return { profile, roles: [] as string[] } as const;
+
+  const { data: assignments, error: rolesError } = await supabase
+    .from("user_roles")
+    .select("roles(name)")
+    .eq("user_id", userId);
+  if (rolesError) return { error: `Could not verify your employee role: ${rolesError.message}` } as const;
+  const roles = (assignments ?? [])
+    .map((assignment) => (assignment.roles as { name?: string } | null)?.name)
+    .filter((role): role is string => Boolean(role));
+  return { profile, roles } as const;
 }
 
 export async function signIn(_: unknown, formData: FormData) {
@@ -266,31 +316,130 @@ export async function completeInvitation(formData: FormData) {
   return { success: true };
 }
 
-export async function reactivateUser(formData: FormData) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) return;
-
-  const { data: actor } = await supabase
-    .from("profiles")
-    .select("user_side, status")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (actor?.user_side !== "admin" || actor.status !== "active") return;
+export async function updateManagedUser(formData: FormData) {
+  const context = await getAdminMutationContext();
+  if ("error" in context) return context;
 
   const userId = value(formData, "user_id");
-  if (!userId || userId === user.id) return;
+  const requestedSide = value(formData, "user_side");
+  if (!isUuid(userId) || !requestedSide || !validUserSides.includes(requestedSide as UserSide)) {
+    return { error: "Choose a valid account and account type." };
+  }
 
-  const adminClient = createAdminClient();
-  await adminClient
+  const userSide = requestedSide as UserSide;
+  if (userId === context.actorId && userSide !== "admin") {
+    return { error: "You cannot remove your own administrator access." };
+  }
+
+  const { data: target, error: targetError } = await context.adminClient
     .from("profiles")
-    .update({ status: "active" })
+    .select("id, user_side, status")
     .eq("id", userId)
-    .eq("status", "inactive");
+    .maybeSingle();
+  if (targetError || !target) return { error: "That account could not be found." };
+
+  if (target.user_side === "admin" && target.status === "active" && userSide !== "admin") {
+    const { count, error } = await context.adminClient
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("user_side", "admin")
+      .eq("status", "active")
+      .neq("id", userId);
+    if (error) return { error: `Could not verify administrator access: ${error.message}` };
+    if (!count) return { error: "You cannot remove the last active administrator." };
+  }
+
+  const requestedRoleIds = userSide === "employee"
+    ? [...new Set(formData.getAll("role_ids").map((raw) => Number(raw)).filter((id) => Number.isInteger(id) && id > 0))]
+    : [];
+  if (userSide === "employee" && requestedRoleIds.length === 0) {
+    return { error: "Assign at least one employee role." };
+  }
+
+  if (requestedRoleIds.length > 0) {
+    const { data: roles, error } = await context.adminClient
+      .from("roles")
+      .select("id")
+      .in("id", requestedRoleIds);
+    if (error) return { error: `Could not verify employee roles: ${error.message}` };
+    if ((roles?.length ?? 0) !== requestedRoleIds.length) {
+      return { error: "One or more selected employee roles are invalid." };
+    }
+  }
+
+  if (requestedRoleIds.length > 0) {
+    const { error } = await context.adminClient.from("user_roles").upsert(
+      requestedRoleIds.map((roleId) => ({ user_id: userId, role_id: roleId })),
+      { onConflict: "user_id,role_id", ignoreDuplicates: true }
+    );
+    if (error) return { error: `Could not assign employee roles: ${error.message}` };
+  }
+
+  const { error: profileError } = await context.adminClient
+    .from("profiles")
+    .update({ user_side: userSide })
+    .eq("id", userId);
+  if (profileError) return { error: `Could not update account type: ${profileError.message}` };
+
+  let roleDelete = context.adminClient.from("user_roles").delete().eq("user_id", userId);
+  if (requestedRoleIds.length > 0) {
+    roleDelete = roleDelete.not("role_id", "in", `(${requestedRoleIds.join(",")})`);
+  }
+  const { error: roleError } = await roleDelete;
+  if (roleError) {
+    return { error: `Account type was updated, but employee roles could not be synchronized: ${roleError.message}` };
+  }
 
   revalidatePath("/admin/users");
+  revalidatePath("/dashboard");
+  return { success: "Account details updated." };
+}
+
+async function setManagedUserStatus(formData: FormData, status: "active" | "inactive") {
+  const context = await getAdminMutationContext();
+  if ("error" in context) return context;
+
+  const userId = value(formData, "user_id");
+  if (!isUuid(userId)) return { error: "Choose a valid account." };
+  if (userId === context.actorId && status === "inactive") {
+    return { error: "You cannot deactivate your own administrator account." };
+  }
+
+  const { data: target, error: targetError } = await context.adminClient
+    .from("profiles")
+    .select("id, user_side, status")
+    .eq("id", userId)
+    .maybeSingle();
+  if (targetError || !target) return { error: "That account could not be found." };
+
+  if (status === "inactive" && target.user_side === "admin" && target.status === "active") {
+    const { count, error } = await context.adminClient
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("user_side", "admin")
+      .eq("status", "active")
+      .neq("id", userId);
+    if (error) return { error: `Could not verify administrator access: ${error.message}` };
+    if (!count) return { error: "You cannot deactivate the last active administrator." };
+  }
+
+  const { error } = await context.adminClient
+    .from("profiles")
+    .update({ status })
+    .eq("id", userId);
+  if (error) return { error: `Could not ${status === "active" ? "restore" : "deactivate"} account: ${error.message}` };
+
+  revalidatePath("/admin/users");
+  revalidatePath("/dashboard");
+  return { success: status === "active" ? "Account access restored." : "Account deactivated." };
+}
+
+export async function deactivateUser(formData: FormData) {
+  return setManagedUserStatus(formData, "inactive");
+}
+
+export async function reactivateUser(formData: FormData) {
+  return setManagedUserStatus(formData, "active");
 }
 
 export async function createProject(formData: FormData) {
@@ -423,6 +572,107 @@ export async function setProjectApprovers(formData: FormData) {
   return { success: "Project approvers saved." };
 }
 
+export async function saveTicketRoutingRule(formData: FormData) {
+  const context = await getAdminMutationContext();
+  if ("error" in context) return context;
+
+  const name = value(formData, "name");
+  const projectId = value(formData, "project_id");
+  const categoryId = value(formData, "category_id");
+  const requestType = value(formData, "request_type");
+  const disciplineId = value(formData, "discipline_id");
+  const assignedTo = value(formData, "assigned_to");
+  const ruleId = value(formData, "rule_id");
+  const rulePriorityText = value(formData, "rule_priority") ?? "100";
+  const validRequestTypes = ["general", "access_request", "incident_report"];
+
+  if (
+    !name || name.length > 100 ||
+    [projectId, categoryId, disciplineId].some((id) => id !== null && !/^\d+$/.test(id)) ||
+    (requestType !== null && !validRequestTypes.includes(requestType)) ||
+    (assignedTo !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assignedTo)) ||
+    (ruleId !== null && !/^\d+$/.test(ruleId)) ||
+    !/^\d+$/.test(rulePriorityText) || Number(rulePriorityText) > 9999
+  ) {
+    return { error: "Enter a valid rule name, criteria, route target, and order." };
+  }
+  if ((!projectId && !categoryId && !requestType) || (!disciplineId && !assignedTo)) {
+    return { error: "Choose at least one match condition and at least one routing target." };
+  }
+
+  const admin = context.adminClient;
+  if (projectId) {
+    const { data } = await admin.from("projects").select("id").eq("id", projectId).maybeSingle();
+    if (!data) return { error: "Choose an existing project." };
+  }
+  if (categoryId) {
+    const { data } = await admin.from("categories").select("id").eq("id", categoryId).maybeSingle();
+    if (!data) return { error: "Choose an existing category." };
+  }
+  if (disciplineId) {
+    const { data } = await admin.from("disciplines").select("id").eq("id", disciplineId).eq("status", "active").maybeSingle();
+    if (!data) return { error: "Choose an active discipline." };
+  }
+  if (assignedTo) {
+    const { data } = await admin.from("profiles")
+      .select("id")
+      .eq("id", assignedTo)
+      .eq("user_side", "employee")
+      .eq("status", "active")
+      .maybeSingle();
+    if (!data) return { error: "Choose an active employee as the assignee." };
+  }
+
+  const rule = {
+    name,
+    project_id: projectId ? Number(projectId) : null,
+    category_id: categoryId ? Number(categoryId) : null,
+    request_type: requestType,
+    discipline_id: disciplineId ? Number(disciplineId) : null,
+    assigned_to: assignedTo,
+    rule_priority: Number(rulePriorityText),
+    is_active: formData.get("is_active") === "on"
+  };
+
+  if (ruleId) {
+    const { data, error } = await admin.from("ticket_routing_rules")
+      .update(rule)
+      .eq("id", Number(ruleId))
+      .select("id")
+      .maybeSingle();
+    if (error) return { error: `Could not update routing rule: ${error.message}` };
+    if (!data) return { error: "Routing rule not found." };
+  } else {
+    const { error } = await admin.from("ticket_routing_rules").insert(rule);
+    if (error) return { error: `Could not create routing rule: ${error.message}` };
+  }
+
+  revalidatePath("/admin/routing");
+  revalidatePath("/inbox");
+  revalidatePath("/queue");
+  return { success: ruleId ? "Routing rule updated." : "Routing rule created." };
+}
+
+export async function deleteTicketRoutingRule(formData: FormData) {
+  const context = await getAdminMutationContext();
+  if ("error" in context) return context;
+  const ruleId = value(formData, "rule_id");
+  if (!ruleId || !/^\d+$/.test(ruleId)) return { error: "Choose a valid routing rule." };
+
+  const { data, error } = await context.adminClient.from("ticket_routing_rules")
+    .delete()
+    .eq("id", Number(ruleId))
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: `Could not delete routing rule: ${error.message}` };
+  if (!data) return { error: "Routing rule not found." };
+
+  revalidatePath("/admin/routing");
+  revalidatePath("/inbox");
+  revalidatePath("/queue");
+  return { success: "Routing rule deleted." };
+}
+
 export async function createTicket(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -474,6 +724,9 @@ export async function createTicket(formData: FormData) {
   if (!title || !description) {
     return { error: "Enter a title and details for your request." };
   }
+  if (title.length > 200 || description.length > 10000) {
+    return { error: "Keep the title to 200 characters and the request details to 10,000 characters or fewer." };
+  }
   if (!requestType) return { error: "Choose a valid request type." };
 
   if (projectId) {
@@ -482,7 +735,7 @@ export async function createTicket(formData: FormData) {
     }
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .select("id, pm_user_id")
+      .select("id")
       .eq("id", projectId)
       .in("status", ["planned", "ongoing"])
       .maybeSingle();
@@ -491,31 +744,14 @@ export async function createTicket(formData: FormData) {
     }
     if (!project) return { error: "Select a Planned or Ongoing project." };
 
-    const { data: designatedApprovers, error: designatedApproverError } = await supabase
-      .from("project_approvers")
-      .select("user_id")
-      .eq("project_id", projectId);
-    if (designatedApproverError) {
-      return { error: `Could not validate project approvers: ${designatedApproverError.message}` };
-    }
-
-    const candidateIds = [
-      project.pm_user_id,
-      ...(designatedApprovers ?? []).map((approver) => approver.user_id)
-    ].filter((id): id is string => Boolean(id));
-    if (candidateIds.length === 0) {
-      return { error: "An administrator must assign a PM or project approver before tickets can be submitted for this project." };
-    }
-
-    const { data: activeApprovers, error: activeApproverError } = await supabase
-      .from("profiles")
-      .select("id")
-      .in("id", candidateIds)
-      .eq("status", "active");
+    const { data: hasActiveApprover, error: activeApproverError } = await supabase.rpc(
+      "project_has_active_approver",
+      { p_project_id: Number(projectId) }
+    );
     if (activeApproverError) {
       return { error: `Could not validate project approvers: ${activeApproverError.message}` };
     }
-    if (!activeApprovers?.length) {
+    if (!hasActiveApprover) {
       return { error: "An administrator must assign an active PM or project approver before tickets can be submitted for this project." };
     }
   }
@@ -552,6 +788,79 @@ export async function createTicket(formData: FormData) {
   return { ticketId: String(ticket.id), userId: user.id };
 }
 
+export async function linkRelatedTicket(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to link related tickets." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if ("error" in actor) return actor;
+  if (actor.profile.user_side === "client") {
+    return { error: "Only staff can link related tickets." };
+  }
+
+  const ticketId = value(formData, "ticket_id");
+  const ticketNumber = value(formData, "related_ticket_no")?.toUpperCase();
+  if (!ticketId || !/^\d+$/.test(ticketId) || !ticketNumber || ticketNumber.length > 40) {
+    return { error: "Enter a valid ticket number." };
+  }
+  const { data: currentTicket, error: currentError } = await supabase
+    .from("tickets").select("id").eq("id", ticketId).maybeSingle();
+  if (currentError) return { error: currentError.message };
+  if (!currentTicket) return { error: "You cannot access this ticket." };
+
+  const { data: relatedTicket, error: relatedError } = await supabase
+    .from("tickets").select("id").eq("ticket_no", ticketNumber).maybeSingle();
+  if (relatedError) return { error: relatedError.message };
+  if (!relatedTicket) return { error: "That ticket was not found or you do not have access to it." };
+  if (Number(relatedTicket.id) === Number(ticketId)) {
+    return { error: "A ticket cannot be linked to itself." };
+  }
+
+  const smallerId = Math.min(Number(ticketId), Number(relatedTicket.id));
+  const largerId = Math.max(Number(ticketId), Number(relatedTicket.id));
+  const { error } = await supabase.from("ticket_links").insert({
+    ticket_id: smallerId,
+    related_ticket_id: largerId,
+    created_by: user.id
+  });
+  if (error?.code === "23505") return { error: "These tickets are already linked." };
+  if (error) return { error: `Could not link these tickets: ${error.message}` };
+
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath(`/tickets/${relatedTicket.id}`);
+  return { success: "Related ticket linked." };
+}
+
+export async function unlinkRelatedTicket(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to unlink tickets." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if ("error" in actor) return actor;
+  if (actor.profile.user_side === "client") return { error: "Only staff can unlink tickets." };
+
+  const ticketId = value(formData, "ticket_id");
+  const relatedTicketId = value(formData, "related_ticket_id");
+  if (!ticketId || !/^\d+$/.test(ticketId) || !relatedTicketId || !/^\d+$/.test(relatedTicketId) || ticketId === relatedTicketId) {
+    return { error: "Choose a valid related ticket." };
+  }
+
+  const smallerId = Math.min(Number(ticketId), Number(relatedTicketId));
+  const largerId = Math.max(Number(ticketId), Number(relatedTicketId));
+  const { data, error } = await supabase.from("ticket_links")
+    .delete()
+    .eq("ticket_id", smallerId)
+    .eq("related_ticket_id", largerId)
+    .select("ticket_id")
+    .maybeSingle();
+  if (error) return { error: `Could not unlink these tickets: ${error.message}` };
+  if (!data) return { error: "The ticket link was not found or you do not have access to both tickets." };
+
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath(`/tickets/${relatedTicketId}`);
+  return { success: "Ticket link removed." };
+}
+
 export async function addComment(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -567,6 +876,7 @@ export async function addComment(formData: FormData) {
   if (!ticketId || !body) {
     return { error: "Enter a comment before posting." };
   }
+  if (body.length > 5000) return { error: "Comments must be 5,000 characters or fewer." };
 
   const { data: comment, error } = await supabase
     .from("ticket_comments")
@@ -593,6 +903,8 @@ export async function updateTicketStatus(formData: FormData) {
     data: { user }
   } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to update this ticket." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if ("error" in actor) return actor;
 
   const ticketId = value(formData, "ticket_id");
   const requestedStatus = value(formData, "status");
@@ -610,6 +922,26 @@ export async function updateTicketStatus(formData: FormData) {
 
   if (!ticketId || !status) return { error: "Choose a valid ticket status." };
 
+  if (actor.profile.user_side === "client") {
+    if (status !== "closed") return { error: "Clients can only confirm completion of their own resolved tickets." };
+    const { data: closed, error } = await supabase.rpc("close_own_resolved_ticket", {
+      p_ticket_id: Number(ticketId)
+    });
+    if (error) return { error: error.message };
+    if (closed !== true) return { error: "Only your own resolved ticket can be closed." };
+    revalidatePath(`/tickets/${ticketId}`);
+    revalidatePath("/tickets");
+    revalidatePath("/dashboard");
+    revalidatePath("/inbox");
+    return { success: "Ticket marked as complete." };
+  }
+  if (
+    actor.profile.user_side !== "admin" &&
+    !actor.roles.some((role) => ["Personnel", "Discipline Lead"].includes(role))
+  ) {
+    return { error: "Only Personnel, Discipline Leads, or administrators can update ticket status." };
+  }
+
   const { data: currentTicket, error: ticketLookupError } = await supabase
     .from("tickets")
     .select("approval_status")
@@ -620,7 +952,9 @@ export async function updateTicketStatus(formData: FormData) {
     return { error: "This ticket cannot be worked until project approval is complete." };
   }
 
-  const update: { status: TicketStatus; resolution_notes?: string } = { status };
+  const update: { status: TicketStatus; resolution_notes?: string; resolved_at?: string | null } = { status };
+  if (status === "resolved") update.resolved_at = new Date().toISOString();
+  else update.resolved_at = null;
   const resolutionNotes = value(formData, "resolution_notes");
   if (status === "resolved" && resolutionNotes) {
     update.resolution_notes = resolutionNotes;
@@ -639,6 +973,7 @@ export async function updateTicketStatus(formData: FormData) {
   revalidatePath(`/tickets/${ticketId}`);
   revalidatePath("/dashboard");
   revalidatePath("/queue");
+  revalidatePath("/inbox");
   return { success: "Ticket status updated." };
 }
 
@@ -648,12 +983,21 @@ export async function routeTicket(formData: FormData) {
     data: { user }
   } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to route this ticket." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if ("error" in actor) return actor;
+  if (
+    actor.profile.user_side !== "admin" &&
+    !actor.roles.some((role) => ["Coordinator", "Discipline Lead"].includes(role))
+  ) {
+    return { error: "Only Coordinators, Discipline Leads, or administrators can route tickets." };
+  }
 
   const ticketId = value(formData, "ticket_id");
   const requestedPriority = value(formData, "priority");
   const priorities: Priority[] = ["low", "medium", "high", "urgent"];
   const priority = priorities.find((option) => option === requestedPriority);
   const assignedTo = value(formData, "assigned_to");
+  const dueDate = value(formData, "due_date") || null;
   const requestedStatus = value(formData, "status");
   const allowedStatuses: TicketStatus[] = [
     "open",
@@ -669,6 +1013,12 @@ export async function routeTicket(formData: FormData) {
 
   if (!ticketId || !priority || !status) {
     return { error: "Choose a valid discipline, priority, assignee, and status." };
+  }
+  if (["resolved", "closed", "rejected"].includes(status)) {
+    return { error: "Routing cannot resolve, close, or reject a ticket. Use the ticket status or approval action." };
+  }
+  if (dueDate && (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || Number.isNaN(Date.parse(`${dueDate}T00:00:00Z`)))) {
+    return { error: "Choose a valid due date." };
   }
 
   const { data: currentTicket, error: ticketLookupError } = await supabase
@@ -699,7 +1049,9 @@ export async function routeTicket(formData: FormData) {
       priority,
       discipline_id: value(formData, "discipline_id"),
       assigned_to: assignedTo,
-      status
+      due_date: dueDate,
+      status,
+      resolved_at: status === "resolved" ? new Date().toISOString() : null
     })
     .eq("id", ticketId)
     .select("id")
@@ -710,9 +1062,115 @@ export async function routeTicket(formData: FormData) {
 
   revalidatePath(`/tickets/${ticketId}`);
   revalidatePath("/queue");
+  revalidatePath("/inbox");
   revalidatePath("/tickets");
   revalidatePath("/dashboard");
   return { success: "Ticket routing and assignment saved." };
+}
+
+export async function bulkUpdateTickets(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to update tickets." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if ("error" in actor) return actor;
+
+  const ids = Array.from(new Set(formData.getAll("ticket_ids")
+    .filter((id): id is string => typeof id === "string" && /^\d+$/.test(id))));
+  if (ids.length === 0 || ids.length > 50) return { error: "Select between 1 and 50 tickets." };
+  const operation = value(formData, "operation");
+  const patch: { assigned_to?: string | null; status?: TicketStatus; resolved_at?: string | null } = {};
+
+  if (operation === "assign") {
+    if (actor.profile.user_side !== "admin" && !actor.roles.some((role) => ["Coordinator", "Discipline Lead"].includes(role))) {
+      return { error: "Only Coordinators, Discipline Leads, or administrators can bulk assign tickets." };
+    }
+    const assigneeId = value(formData, "assigned_to");
+    if (assigneeId) {
+      const { data: assignee } = await supabase.from("profiles").select("id")
+        .eq("id", assigneeId).eq("user_side", "employee").eq("status", "active").maybeSingle();
+      if (!assignee) return { error: "Choose an active employee as the assignee." };
+    }
+    patch.assigned_to = assigneeId;
+  } else if (operation === "status") {
+    if (actor.profile.user_side !== "admin" && !actor.roles.some((role) => ["Personnel", "Discipline Lead"].includes(role))) {
+      return { error: "Only Personnel, Discipline Leads, or administrators can bulk update status." };
+    }
+    const status = value(formData, "status");
+    if (!status || !["under_review", "assigned", "in_progress", "waiting_for_info", "resolved"].includes(status)) {
+      return { error: "Choose a supported active ticket status." };
+    }
+    patch.status = status as TicketStatus;
+    patch.resolved_at = status === "resolved" ? new Date().toISOString() : null;
+  } else return { error: "Choose an assignment or status action." };
+
+  const { data: currentTickets, error: lookupError } = await supabase.from("tickets")
+    .select("id, approval_status").in("id", ids);
+  if (lookupError) return { error: lookupError.message };
+  if ((currentTickets ?? []).length !== ids.length) return { error: "Some selected tickets are unavailable to you. Refresh the inbox and try again." };
+  if (currentTickets?.some((ticket) => ticket.approval_status === "pending" || ticket.approval_status === "rejected")) {
+    return { error: "Remove tickets awaiting or denied project approval before applying bulk changes." };
+  }
+
+  const { data, error } = await supabase.from("tickets").update(patch).in("id", ids).select("id");
+  if (error) return { error: error.message };
+  if ((data ?? []).length !== ids.length) return { error: `Updated ${data?.length ?? 0} of ${ids.length} selected tickets. Some may be outside your permissions or awaiting approval.` };
+  revalidatePath("/inbox");
+  revalidatePath("/tickets");
+  revalidatePath("/queue");
+  revalidatePath("/dashboard");
+  return { success: `Updated ${ids.length} tickets.` };
+}
+
+export async function saveTicketSlaPolicies(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to manage SLA targets." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if ("error" in actor) return actor;
+  if (actor.profile.user_side !== "admin") return { error: "Only administrators can manage SLA targets." };
+
+  const priorities: Priority[] = ["urgent", "high", "medium", "low"];
+  const policies = priorities.map((priority) => {
+    const response = Number(value(formData, `response_${priority}`));
+    const resolution = Number(value(formData, `resolution_${priority}`));
+    return { priority, first_response_hours: response, resolution_hours: resolution, updated_at: new Date().toISOString() };
+  });
+  if (policies.some((policy) => !Number.isInteger(policy.first_response_hours) || policy.first_response_hours < 1 || policy.first_response_hours > 8760 || !Number.isInteger(policy.resolution_hours) || policy.resolution_hours < 1 || policy.resolution_hours > 8760)) {
+    return { error: "Enter whole hour targets between 1 and 8,760 for every priority." };
+  }
+  const { error } = await supabase.from("ticket_sla_policies").upsert(policies, { onConflict: "priority" });
+  if (error) return { error: error.message };
+  revalidatePath("/admin/sla");
+  revalidatePath("/inbox");
+  return { success: "SLA targets saved." };
+}
+
+export async function handoffTicket(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to hand off this ticket." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if ("error" in actor) return actor;
+  if (actor.profile.user_side !== "admin" && !actor.roles.some((role) => ["Coordinator", "Discipline Lead"].includes(role))) {
+    return { error: "Only Coordinators, Discipline Leads, or administrators can hand off tickets." };
+  }
+  const ticketId = value(formData, "ticket_id");
+  const assignedTo = value(formData, "assigned_to");
+  const note = value(formData, "note");
+  if (!ticketId || !/^\d+$/.test(ticketId)) return { error: "Choose a valid ticket." };
+  if (!note || note.length < 5 || note.length > 2000) return { error: "Handoff notes must be between 5 and 2,000 characters." };
+  const { error } = await supabase.rpc("create_ticket_handoff", {
+    p_ticket_id: Number(ticketId),
+    p_assigned_to: assignedTo,
+    p_note: note
+  });
+  if (error) return { error: error.message };
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath("/inbox");
+  revalidatePath("/tickets");
+  revalidatePath("/dashboard");
+  return { success: "Ticket handed off with a staff-only note." };
 }
 
 export async function reviewProjectTicket(formData: FormData) {
@@ -747,7 +1205,74 @@ export async function reviewProjectTicket(formData: FormData) {
   revalidatePath("/tickets");
   revalidatePath("/dashboard");
   revalidatePath("/queue");
+  revalidatePath("/inbox");
   return { success: decision === "approved" ? "Ticket approved." : "Ticket rejected." };
+}
+
+export async function markNotificationRead(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to update notifications." };
+
+  const notificationId = value(formData, "notification_id");
+  if (!notificationId || !/^\d+$/.test(notificationId)) {
+    return { error: "Choose a valid notification." };
+  }
+
+  const { error } = await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("id", notificationId)
+    .eq("user_id", user.id);
+  if (error) return { error: `The notification could not be marked as read: ${error.message}` };
+
+  revalidatePath("/notifications");
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+
+export async function markAllNotificationsRead() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to update notifications." };
+
+  const { error } = await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("user_id", user.id)
+    .eq("is_read", false);
+  if (error) return { error: `Notifications could not be marked as read: ${error.message}` };
+
+  revalidatePath("/notifications");
+  revalidatePath("/dashboard");
+  return { success: true };
+}
+
+export async function saveNotificationPreferences(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to update notification preferences." };
+
+  const allowedTypes = ["ticket_submitted", "ticket_assigned", "ticket_approved", "ticket_rejected", "ticket_updated"] as const;
+  const enabledTypes = new Set(formData.getAll("enabled_types").filter((item): item is string => typeof item === "string"));
+  if ([...enabledTypes].some((type) => !allowedTypes.includes(type as typeof allowedTypes[number]))) {
+    return { error: "One or more notification options are invalid." };
+  }
+
+  const { error } = await supabase.from("notification_preferences").upsert(
+    allowedTypes.map((notification_type) => ({
+      user_id: user.id,
+      notification_type,
+      enabled: enabledTypes.has(notification_type),
+      updated_at: new Date().toISOString()
+    })),
+    { onConflict: "user_id,notification_type" }
+  );
+  if (error) return { error: `Notification preferences could not be saved: ${error.message}` };
+
+  revalidatePath("/settings");
+  revalidatePath("/notifications");
+  return { success: "Notification preferences saved." };
 }
 
 export async function saveFaq(formData: FormData) {

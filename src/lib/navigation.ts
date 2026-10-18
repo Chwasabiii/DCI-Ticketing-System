@@ -4,6 +4,7 @@ export type NavIcon =
   | "bar-chart"
   | "bell"
   | "clipboard"
+  | "clock"
   | "file-chart"
   | "home"
   | "inbox"
@@ -40,7 +41,6 @@ export function getNavItems(
       { label: "Dashboard", href: "/dashboard", icon: "home" },
       { label: "My Tickets", href: "/tickets", icon: "clipboard" },
       { label: "FAQs", href: "/faqs", icon: "clipboard" },
-      { label: "Approvals", href: "/approvals", icon: "shield" },
       { label: "Open a Ticket", href: "/tickets/new", icon: "plus" }
     ];
   }
@@ -48,10 +48,11 @@ export function getNavItems(
   if (userSide === "admin") {
     return [
       { label: "Dashboard", href: "/dashboard", icon: "home" },
-      { label: "Incoming Queue", href: "/queue", icon: "inbox" },
+      { label: "Triage Inbox", href: "/inbox", icon: "inbox" },
       { label: "FAQs", href: "/faqs", icon: "clipboard" },
-      { label: "Approvals", href: "/approvals", icon: "shield" },
       { label: "All Tickets", href: "/tickets", icon: "clipboard" },
+      { label: "Routing Rules", href: "/admin/routing", icon: "workflow" },
+      { label: "SLA Targets", href: "/admin/sla", icon: "clock" },
       { label: "Users", href: "/admin/users", icon: "users" },
       { label: "Manage FAQs", href: "/admin/faqs", icon: "clipboard" },
       { label: "Projects", href: "/admin/projects", icon: "clipboard" },
@@ -63,27 +64,18 @@ export function getNavItems(
 
   const items: NavItem[] = [
     { label: "Dashboard", href: "/dashboard", icon: "home" },
+    { label: "Triage Inbox", href: "/inbox", icon: "inbox" },
     { label: "FAQs", href: "/faqs", icon: "clipboard" },
-    { label: "Approvals", href: "/approvals", icon: "shield" },
     { label: "Open a Ticket", href: "/tickets/new", icon: "plus" }
   ];
-
-  if (roles.includes("Coordinator")) {
-    items.push({ label: "Incoming Queue", href: "/queue", icon: "inbox" });
-  }
 
   if (roles.includes("Discipline Lead")) {
     items.push({ label: "Discipline Tickets", href: "/discipline", icon: "workflow" });
     items.push({ label: "Workload", href: "/workload", icon: "bar-chart" });
   }
 
-  if (roles.includes("Personnel")) {
-    items.push({ label: "Assigned Tickets", href: "/assigned", icon: "clipboard" });
-  }
-
   if (roles.includes("Manager")) {
     items.push({ label: "Reports", href: "/reports", icon: "file-chart" });
-    items.push({ label: "Overdue", href: "/overdue", icon: "bell" });
   }
 
   return items;

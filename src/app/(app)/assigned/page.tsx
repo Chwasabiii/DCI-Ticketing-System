@@ -1,9 +1,10 @@
-import { TicketTable } from "@/components/tickets/ticket-table";
-import { getTickets } from "@/lib/data";
+import { TicketWorkloadView } from "@/components/tickets/ticket-workload-view";
+import { getCurrentContext, getTickets } from "@/lib/data";
 
 export default async function AssignedPage() {
-  const tickets = (await getTickets(100)).filter((ticket) =>
-    ["assigned", "in_progress", "waiting_for_info"].includes(ticket.status)
+  const [{ profile }, allTickets] = await Promise.all([getCurrentContext(), getTickets(100)]);
+  const tickets = allTickets.filter((ticket) =>
+    ticket.assigned_to === profile?.id && ["assigned", "in_progress", "waiting_for_info"].includes(ticket.status)
   );
 
   return (
@@ -14,7 +15,7 @@ export default async function AssignedPage() {
           Personnel workspace for active assignments, comments, uploads, and resolution updates.
         </p>
       </div>
-      <TicketTable tickets={tickets} />
+      <TicketWorkloadView tickets={tickets} currentUserId={profile?.id} />
     </div>
   );
 }

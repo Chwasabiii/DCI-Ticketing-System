@@ -1,20 +1,26 @@
 "use client";
 
 import { Headphones } from "lucide-react";
+import Link from "next/link";
+import { Inbox, Plus } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { NotificationMenu } from "@/components/layout/notification-menu";
 import { ProfileMenu } from "@/components/layout/profile-menu";
 import type { NavItem } from "@/lib/navigation";
-import type { EmployeeRole, Profile } from "@/lib/types";
+import type { EmployeeRole, Notification, Profile } from "@/lib/types";
 
 export function Topbar({
   profile,
   roles,
-  items
+  items,
+  notifications,
+  unreadNotificationCount
 }: {
   profile: Profile | null;
   roles: EmployeeRole[];
   items: NavItem[];
+  notifications: Notification[];
+  unreadNotificationCount: number;
 }) {
   const pathname = usePathname();
   const currentItem = [...items]
@@ -33,7 +39,9 @@ export function Topbar({
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
         Support workspace
       </div>
-      <NotificationMenu />
+      {items.some((item) => item.href === "/tickets/new") && <Link href="/tickets/new" aria-label="Create a new ticket" className="focus-ring inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-semibold text-white transition-colors hover:bg-blue-700"><Plus className="h-4 w-4" /><span className="hidden sm:inline">New ticket</span></Link>}
+      {items.some((item) => item.href === "/inbox") && <Link href="/inbox" aria-label="Open triage inbox" title="Triage inbox" className="focus-ring grid h-9 w-9 place-items-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-50"><Inbox className="h-4 w-4" /></Link>}
+      <NotificationMenu notifications={notifications} unreadCount={unreadNotificationCount} userId={profile?.id ?? ""} />
       <ProfileMenu profile={profile} roles={roles} />
     </header>
   );

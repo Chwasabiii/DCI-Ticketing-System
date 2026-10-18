@@ -18,6 +18,11 @@
   box-sizing: border-box;
 }
 
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #3969e8;
+  outline-offset: 2px;
+}
+
 body {
   margin: 0;
   background: #f4f6fa;
@@ -37,7 +42,31 @@ textarea {
   @apply focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2;
 }
 
+@keyframes enter-soft {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes modal-soft {
+  from { opacity: 0; transform: translateY(12px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.animate-enter { animation: enter-soft 220ms ease-out both; }
+.animate-modal-in { animation: modal-soft 180ms ease-out both; }
+
 ::selection {
   background: #dce7ff;
   color: #12213a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

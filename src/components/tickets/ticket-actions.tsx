@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import { CheckCircle2, Route, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { TicketCommentForm } from "@/components/tickets/ticket-comment-form";
 import { routeTicket, updateTicketStatus } from "@/lib/actions";
 import type { Discipline, EmployeeRole, Profile, Ticket, TicketStatus } from "@/lib/types";
@@ -34,10 +35,13 @@ export function TicketActions({
   people: Profile[];
 }) {
   const router = useRouter();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [routing, setRouting] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [routingMessage, setRoutingMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [routingFailed, setRoutingFailed] = useState(false);
+  const [statusFailed, setStatusFailed] = useState(false);
   const canRoute =
     profile.user_side === "admin" ||
     roles.includes("Coordinator") ||
@@ -62,9 +66,11 @@ export function TicketActions({
 
     setRouting(true);
     setRoutingMessage(null);
+    setRoutingFailed(false);
     try {
       const result = await routeTicket(new FormData(event.currentTarget));
       if ("error" in result) {
+        setRoutingFailed(true);
         setRoutingMessage(result.error ?? "The routing changes could not be saved.");
         return;
       }
@@ -82,11 +88,20 @@ export function TicketActions({
     event.preventDefault();
     if (updatingStatus) return;
 
+    const formData = new FormData(event.currentTarget);
+    const nextStatus = String(formData.get("status") ?? "");
+    if (["resolved", "closed", "rejected"].includes(nextStatus) && nextStatus !== ticket.status) {
+      const label = nextStatus.replaceAll("_", " ");
+      if (!await confirm({ title: `Mark ticket as ${label}?`, description: "This change will be visible to the requester and assigned staff.", confirmLabel: `Mark ${label}`, danger: nextStatus === "rejected" })) return;
+    }
+
     setUpdatingStatus(true);
     setStatusMessage(null);
+    setStatusFailed(false);
     try {
-      const result = await updateTicketStatus(new FormData(event.currentTarget));
+      const result = await updateTicketStatus(formData);
       if ("error" in result) {
+        setStatusFailed(true);
         setStatusMessage(result.error ?? "The ticket status could not be updated.");
         return;
       }
@@ -102,6 +117,7 @@ export function TicketActions({
 
   return (
     <div className="grid gap-4">
+      {confirmDialog}
       <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-navy">Handle this request</h2>
@@ -162,11 +178,20 @@ export function TicketActions({
                   <option value="urgent">Urgent</option>
                 </select>
               </label>
+              <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
+                Due date
+                <input
+                  name="due_date"
+                  type="date"
+                  defaultValue={ticket.due_date ?? ""}
+                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
+                />
+              </label>
               <input type="hidden" name="status" value={routingStatus} />
               {routingMessage && (
-                <p role="status" className="text-sm text-slate-600">{routingMessage}</p>
+                <p role={routingFailed ? "alert" : "status"} className={`text-sm ${routingFailed ? "text-red-700" : "text-resolved"}`}>{routingMessage}</p>
               )}
-              <Button type="submit" variant="secondary" disabled={routing}>
+              <Button type="submit" variant="secondary" loading={routing}>
                 <Route className="h-4 w-4" />
                 {routing ? "Saving..." : "Save routing"}
               </Button>
@@ -202,9 +227,9 @@ export function TicketActions({
                 </label>
               )}
               {statusMessage && (
-                <p role="status" className="text-sm text-slate-600">{statusMessage}</p>
+                <p role={statusFailed ? "alert" : "status"} className={`text-sm ${statusFailed ? "text-red-700" : "text-resolved"}`}>{statusMessage}</p>
               )}
-              <Button type="submit" disabled={updatingStatus}>
+              <Button type="submit" loading={updatingStatus}>
                 <Save className="h-4 w-4" />
                 {updatingStatus ? "Updating..." : "Update status"}
               </Button>
@@ -214,7 +239,7 @@ export function TicketActions({
             <form onSubmit={handleStatusUpdate}>
               <input type="hidden" name="ticket_id" value={ticket.id} />
               <input type="hidden" name="status" value="closed" />
-              <Button type="submit" disabled={updatingStatus}>
+              <Button type="submit" loading={updatingStatus}>
                 <CheckCircle2 className="h-4 w-4" />
                 Confirm completion
               </Button>

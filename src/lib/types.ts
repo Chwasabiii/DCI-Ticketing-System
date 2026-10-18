@@ -57,6 +57,26 @@ export type Profile = {
   discipline_id?: string | null;
 };
 
+export type ManagedProfile = Profile & {
+  invitation_pending: boolean;
+  employee_roles: EmployeeRole[];
+};
+
+export type Notification = {
+  id: number;
+  user_id: string;
+  ticket_id: number | null;
+  type: string;
+  message: string | null;
+  is_read: boolean;
+  created_at: string;
+};
+
+export type NotificationPreference = {
+  notification_type: "ticket_submitted" | "ticket_assigned" | "ticket_approved" | "ticket_rejected" | "ticket_updated";
+  enabled: boolean;
+};
+
 export type UserRole = {
   user_id: string;
   role_id: number;
@@ -85,11 +105,41 @@ export type Ticket = {
   resolution_notes?: string | null;
   due_date?: string | null;
   created_at?: string | null;
+  resolved_at?: string | null;
+  first_response_at?: string | null;
   updated_at?: string | null;
   requester?: ProfileSummary | null;
   assignee?: ProfileSummary | null;
   department?: { name: string } | null;
   project?: { name: string } | null;
+};
+
+export type TicketSlaPolicy = {
+  priority: Priority;
+  first_response_hours: number;
+  resolution_hours: number;
+  updated_at?: string;
+};
+
+export type SimilarTicket = Pick<Ticket, "id" | "ticket_no" | "title" | "status"> & {
+  project_name: string | null;
+  relevance: number;
+};
+
+export type RelatedTicket = Pick<Ticket, "id" | "ticket_no" | "title" | "status" | "priority"> & {
+  project?: { name: string } | null;
+};
+
+export type TicketRoutingRule = {
+  id: number;
+  name: string;
+  project_id: number | null;
+  category_id: number | null;
+  request_type: RequestType | null;
+  discipline_id: number | null;
+  assigned_to: string | null;
+  rule_priority: number;
+  is_active: boolean;
 };
 
 export type ProfileSummary = Pick<Profile, "id" | "full_name" | "email">;
@@ -148,6 +198,7 @@ export type Discipline = {
   id: string | number;
   name: string;
   lead_user_id?: string | null;
+  status?: string;
 };
 
 export type Category = {

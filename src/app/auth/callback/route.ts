@@ -82,7 +82,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.redirect(
-    new URL("/accept-invitation?reason=missing", request.url)
-  );
+  // Supabase's built-in Invite template uses ConfirmationURL. After Auth
+  // verifies it, Supabase redirects with the session in the URL fragment.
+  // Fragments are not sent to route handlers, so hand off to a browser page
+  // that can read the session and persist it through the Supabase client.
+  return NextResponse.redirect(new URL("/auth/callback/continue", request.url));
 }

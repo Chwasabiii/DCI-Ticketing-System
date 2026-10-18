@@ -95,15 +95,18 @@ In Next.js, a `page.tsx` file defines a page. For example, `src/app/(app)/ticket
 | `/tickets` | Browse tickets available to the signed-in user. |
 | `/tickets/new` | Submit a support request. |
 | `/tickets/[id]` | View a ticket, comments, and available actions. |
-| `/queue` | Review new requests before routing. |
-| `/assigned` | View tickets assigned to staff. |
+| `/inbox` | Staff triage inbox for unassigned, assigned-to-me, approval, and overdue tickets. |
+| `/queue` | Focused incoming-ticket queue. |
+| `/assigned` | Focused view of tickets assigned to staff. |
+| `/approvals` | Focused project-approval queue. |
 | `/discipline` | View discipline-related tickets. |
 | `/workload` | View workload information. |
-| `/overdue` | Review overdue tickets. |
+| `/overdue` | Focused overdue-ticket view. |
 | `/reports` | View basic counts by ticket status. |
 | `/notifications` | Placeholder for user notifications. |
 | `/settings` | View the signed-in user's account and roles. |
 | `/admin/users` | View user records. |
+| `/admin/routing` | Configure automatic ticket routing rules. |
 | `/admin/projects` | Add projects and update their status. |
 | `/admin/departments` | View department records. |
 | `/admin/disciplines` | View discipline records. |
@@ -133,6 +136,13 @@ The matching source file is under `src/app/`. For example, `/tickets/new` is imp
    Run `supabase/migrations/20261020_ticket_activity_timeline.sql` to publish ticket audit events for live activity updates and record readable routing and assignment details.
    Run `supabase/migrations/20261021_repair_missing_profiles.sql` to create default client profiles for any existing Auth accounts that are missing one and ensure future accounts get a profile.
    Run `supabase/migrations/20261022_ticket_requester_read_policy.sql` to ensure requesters can read their own newly created ticket rows when the app uses `INSERT ... RETURNING`.
+   Run `supabase/migrations/20261023_ticket_notifications.sql` to create in-app notifications for ticket submissions, assignments, approvals, rejections, comments, and updates.
+   Run `supabase/migrations/20261024_audit_details_and_notification_preferences.sql` to log changed ticket fields and enable per-user in-app notification preferences with duplicate-event protection.
+   Run `supabase/migrations/20261025_security_basics.sql` to limit profile exposure, enforce ticket role checks, protect ticket participant lookups, and restrict private attachment uploads.
+   Run `supabase/migrations/20261026_ticket_duplicate_detection_and_links.sql` to suggest similar visible open tickets and add staff-managed related-ticket links.
+   Run `supabase/migrations/20261027_automatic_ticket_routing.sql` to add admin-managed routing rules and apply them to new tickets after any required project approval.
+   Run `supabase/migrations/20261028_inbox_productivity_features.sql` to add SLA targets and first-response tracking, plus the staff-only ticket handoff RPC. Saved inbox views are stored in each browser; bulk actions and onboarding tips need no database changes.
+   Run `supabase/migrations/20261029_sla_escalations.sql` to schedule in-app alerts to active Discipline Leads and Managers when a high or urgent ticket misses its first-response or resolution SLA. This requires `pg_cron` to be enabled in Supabase; alerts are deduplicated per ticket and SLA type.
 3. Create a test user in Supabase Authentication. The project currently has a sign-in page, not a public sign-up page.
 4. For the first administrator, update the new user's profile in the SQL Editor, replacing the email:
 
@@ -185,6 +195,8 @@ npm run lint       # Run Next.js lint checks
 npm run build      # Create a production build
 npm run start      # Serve the production build locally
 ```
+
+Production backup, migration, and error-monitoring guidance is in [docs/SUPABASE_OPERATIONS.md](docs/SUPABASE_OPERATIONS.md).
 
 If the development site suddenly loses styling or reports missing `/_next` assets, stop duplicate Next.js servers and restart one server. `.next/` is generated output; it is safe to regenerate, but do not edit it by hand.
 

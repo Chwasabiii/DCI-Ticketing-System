@@ -85,7 +85,7 @@ export function ProfileMenu({
             <Link
               href="/settings"
               onClick={() => setMenuOpen(false)}
-              className="flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="focus-ring flex min-h-10 items-center gap-3 rounded-md px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               <Settings className="h-4 w-4 text-slate-500" />
               Settings
@@ -96,7 +96,7 @@ export function ProfileMenu({
                 setMenuOpen(false);
                 setLogoutDialogOpen(true);
               }}
-              className="flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-urgent hover:bg-red-50"
+              className="focus-ring flex min-h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium text-urgent hover:bg-red-50"
             >
               <LogOut className="h-4 w-4" />
               Log out

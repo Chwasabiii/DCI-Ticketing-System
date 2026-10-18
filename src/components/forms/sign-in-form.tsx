@@ -10,7 +10,7 @@ function SubmitButton() {
   const { pending } = useFormStatus();
 
   return (
-    <Button type="submit" className="w-full" disabled={pending}>
+    <Button type="submit" className="w-full" loading={pending}>
       <LockKeyhole className="h-4 w-4" />
       {pending ? "Signing in..." : "Sign in"}
     </Button>

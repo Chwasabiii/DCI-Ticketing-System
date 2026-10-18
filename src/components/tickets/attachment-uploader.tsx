@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import {
   MAX_TICKET_ATTACHMENT_SIZE,
   MAX_TICKET_ATTACHMENTS,
+  ACCEPTED_TICKET_ATTACHMENT_TYPES,
   uploadTicketAttachments,
   validateTicketAttachments
 } from "@/lib/attachments";
@@ -71,6 +72,7 @@ export function AttachmentUploader({
         <input
           type="file"
           multiple
+          accept={ACCEPTED_TICKET_ATTACHMENT_TYPES}
           disabled={isUploading}
           onChange={handleFileChange}
           className="rounded-md border border-slate-200 px-3 py-2 text-sm"
@@ -91,7 +93,7 @@ export function AttachmentUploader({
           {message}
         </p>
       )}
-      <Button type="submit" disabled={isUploading || files.length === 0} className="w-fit">
+      <Button type="submit" loading={isUploading} disabled={files.length === 0} className="w-fit">
         <Upload className="h-4 w-4" />
         {isUploading ? "Uploading..." : "Upload files"}
       </Button>

@@ -5,12 +5,17 @@ import type {
   Comment,
   Discipline,
   EmployeeRole,
+  ManagedProfile,
+  Notification,
+  NotificationPreference,
   Profile,
   ProfileSummary,
+  RelatedTicket,
   TicketAttachment,
   TicketActivity,
   TicketEvent,
   Ticket,
+  TicketSlaPolicy,
   UserRole
 } from "@/lib/types";
 
@@ -88,7 +93,7 @@ export async function getTickets(limit = 50) {
   const { data, error } = await supabase
     .from("tickets")
     .select(
-      "id, ticket_no, title, description, status, priority, request_type, approval_status, approval_comment, reviewed_by, reviewed_at, is_confidential, requester_id, assigned_to, discipline_id, category_id, project_id, due_date, created_at, updated_at, project:projects(name)"
+      "id, ticket_no, title, description, status, priority, request_type, approval_status, approval_comment, reviewed_by, reviewed_at, is_confidential, requester_id, assigned_to, discipline_id, category_id, project_id, due_date, created_at, updated_at, resolved_at, first_response_at, project:projects(name)"
     )
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -96,6 +101,65 @@ export async function getTickets(limit = 50) {
 
   if (error) throw new Error(`Could not load tickets: ${error.message}`);
   return data ?? [];
+}
+
+const reportTicketSelection = "id, ticket_no, title, status, priority, request_type, approval_status, is_confidential, requester_id, assigned_to, discipline_id, category_id, project_id, due_date, created_at, updated_at, resolved_at, first_response_at, project:projects(name)";
+
+export async function getTicketSlaPolicies(): Promise<TicketSlaPolicy[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("ticket_sla_policies")
+    .select("priority, first_response_hours, resolution_hours, updated_at")
+    .order("priority").returns<TicketSlaPolicy[]>();
+  if (error) throw new Error(`Could not load ticket SLA policies: ${error.message}`);
+  return data ?? [];
+}
+
+export async function getAllTickets() {
+  const supabase = await createClient();
+  const pageSize = 1000;
+  const allTickets: Ticket[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("tickets")
+      .select(reportTicketSelection)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + pageSize - 1)
+      .returns<Ticket[]>();
+    if (error) throw new Error(`Could not load tickets: ${error.message}`);
+    allTickets.push(...(data ?? []));
+    if (!data || data.length < pageSize) return allTickets;
+  }
+}
+
+export async function getReportTickets({
+  startDate,
+  endDate,
+  status
+}: {
+  startDate?: string;
+  endDate?: string;
+  status?: string;
+}) {
+  const supabase = await createClient();
+  const pageSize = 1000;
+  const tickets: Ticket[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    let query = supabase
+      .from("tickets")
+      .select(reportTicketSelection)
+      .order("created_at", { ascending: false });
+    if (startDate) query = query.gte("created_at", `${startDate}T00:00:00.000Z`);
+    if (endDate) {
+      const dayAfter = new Date(`${endDate}T00:00:00.000Z`);
+      dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+      query = query.lt("created_at", dayAfter.toISOString());
+    }
+    if (status) query = query.eq("status", status);
+    const { data, error } = await query.range(offset, offset + pageSize - 1).returns<Ticket[]>();
+    if (error) throw new Error(`Could not load ticket report: ${error.message}`);
+    tickets.push(...(data ?? []));
+    if (!data || data.length < pageSize) return tickets;
+  }
 }
 
 export async function getTicket(id: string) {
@@ -109,6 +173,30 @@ export async function getTicket(id: string) {
   return data;
 }
 
+export async function getRelatedTickets(ticketId: string): Promise<RelatedTicket[]> {
+  const supabase = await createClient();
+  const id = Number(ticketId);
+  const { data: links, error: linksError } = await supabase
+    .from("ticket_links")
+    .select("ticket_id, related_ticket_id")
+    .or(`ticket_id.eq.${id},related_ticket_id.eq.${id}`);
+  if (linksError) throw new Error(`Could not load related tickets: ${linksError.message}`);
+
+  const relatedIds = (links ?? []).map((link) =>
+    Number(link.ticket_id) === id ? link.related_ticket_id : link.ticket_id
+  );
+  if (!relatedIds.length) return [];
+
+  const { data, error } = await supabase
+    .from("tickets")
+    .select("id, ticket_no, title, status, priority, project:projects(name)")
+    .in("id", relatedIds)
+    .order("created_at", { ascending: false })
+    .returns<RelatedTicket[]>();
+  if (error) throw new Error(`Could not load related tickets: ${error.message}`);
+  return data ?? [];
+}
+
 export async function canApproveTicket(id: string) {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("can_approve_project_ticket", {
@@ -119,15 +207,14 @@ export async function canApproveTicket(id: string) {
   return data === true;
 }
 
-export async function getProfileSummary(id: string) {
+export async function getProfileSummary(id: string, ticketId: string) {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("profiles")
-    .select("id, full_name, email")
-    .eq("id", id)
-    .maybeSingle<ProfileSummary>();
-
-  return data;
+  const { data, error } = await supabase.rpc("get_ticket_profile_summary", {
+    p_ticket_id: Number(ticketId),
+    p_profile_id: id
+  });
+  if (error) throw new Error(`Could not load ticket participant: ${error.message}`);
+  return (data?.[0] as ProfileSummary | undefined) ?? null;
 }
 
 export async function getTicketActivity(ticketId: string): Promise<TicketActivity[]> {
@@ -164,11 +251,7 @@ export async function getTicketActivity(ticketId: string): Promise<TicketActivit
   );
 
   const profilesResult = actorIds.length
-    ? await supabase
-        .from("profiles")
-        .select("id, full_name, email")
-        .in("id", actorIds)
-        .returns<ProfileSummary[]>()
+    ? await supabase.rpc("get_ticket_activity_profiles", { p_ticket_id: Number(ticketId) })
     : { data: [], error: null };
 
   if (profilesResult.error) {
@@ -176,7 +259,7 @@ export async function getTicketActivity(ticketId: string): Promise<TicketActivit
   }
 
   const profilesById = new Map(
-    (profilesResult.data ?? []).map((profile) => [profile.id, profile])
+    ((profilesResult.data ?? []) as ProfileSummary[]).map((profile) => [profile.id, profile])
   );
   const activity: TicketActivity[] = [
     ...events.map((event) => ({
@@ -261,6 +344,70 @@ export async function getProfiles() {
     .returns<Profile[]>();
 
   return data ?? [];
+}
+
+export async function getManagedProfiles(): Promise<ManagedProfile[]> {
+  const supabase = await createClient();
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, user_side, status, invitation_pending")
+    .order("full_name")
+    .returns<Array<Omit<ManagedProfile, "employee_roles">>>();
+
+  if (profilesError || !profiles?.length) return [];
+
+  const { data: assignments, error: rolesError } = await supabase
+    .from("user_roles")
+    .select("user_id, roles(name)")
+    .in("user_id", profiles.map((profile) => profile.id))
+    .returns<Array<{ user_id: string; roles: { name: EmployeeRole } | null }>>();
+
+  if (rolesError) return profiles.map((profile) => ({ ...profile, employee_roles: [] }));
+
+  const roleMap = new Map<string, EmployeeRole[]>();
+  for (const assignment of assignments ?? []) {
+    const roleName = assignment.roles?.name;
+    if (!roleName) continue;
+    roleMap.set(assignment.user_id, [...(roleMap.get(assignment.user_id) ?? []), roleName]);
+  }
+
+  return profiles.map((profile) => ({
+    ...profile,
+    employee_roles: roleMap.get(profile.id) ?? []
+  }));
+}
+
+export async function getNotifications(limit = 50): Promise<Notification[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("id, user_id, ticket_id, type, message, is_read, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit)
+    .returns<Notification[]>();
+
+  if (error) throw new Error(`Could not load notifications: ${error.message}`);
+  return data ?? [];
+}
+
+export async function getUnreadNotificationCount(): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .from("notifications")
+    .select("id", { count: "exact", head: true })
+    .eq("is_read", false);
+
+  if (error) throw new Error(`Could not count unread notifications: ${error.message}`);
+  return count ?? 0;
+}
+
+export async function getNotificationPreferences(): Promise<NotificationPreference[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("notification_preferences")
+    .select("notification_type, enabled");
+  if (error) throw new Error(`Could not load notification preferences: ${error.message}`);
+  return (data ?? []) as NotificationPreference[];
 }
 
 export async function getAssignableEmployees() {

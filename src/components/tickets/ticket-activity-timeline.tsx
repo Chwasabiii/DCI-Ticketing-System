@@ -191,6 +191,7 @@ export function TicketActivityTimeline({
                     {item.kind === "comment" && item.is_internal && (
                       <Badge value="internal note" />
                     )}
+                    {item.kind === "comment" && item.is_internal && item.body.startsWith("Handoff to ") && <Badge value="handoff" />}
                     {item.created_at && (
                       <time
                         dateTime={item.created_at}

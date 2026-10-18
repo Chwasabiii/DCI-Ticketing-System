@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { Paperclip, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { createTicket } from "@/lib/actions";
 import {
+  ACCEPTED_TICKET_ATTACHMENT_TYPES,
   MAX_TICKET_ATTACHMENT_SIZE,
   MAX_TICKET_ATTACHMENTS,
   uploadTicketAttachments
 } from "@/lib/attachments";
-import type { Category, Department, Discipline, Priority, Project, RequestType } from "@/lib/types";
+import type { Category, Department, Discipline, Priority, Project, RequestType, SimilarTicket } from "@/lib/types";
 
 const priorities: Priority[] = ["low", "medium", "high", "urgent"];
 
@@ -38,6 +40,10 @@ export function TicketForm() {
   const [selectedDiscipline, setSelectedDiscipline] = useState("");
   const [selectedPriority, setSelectedPriority] = useState<Priority>("medium");
   const [selectedProject, setSelectedProject] = useState("");
+  const [titleText, setTitleText] = useState("");
+  const [descriptionText, setDescriptionText] = useState("");
+  const [similarTickets, setSimilarTickets] = useState<SimilarTicket[]>([]);
+  const [checkingSimilar, setCheckingSimilar] = useState(false);
   const [requestType, setRequestType] = useState<RequestType>("general");
   const [message, setMessage] = useState<string | null>(null);
   const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
@@ -78,6 +84,44 @@ export function TicketForm() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (titleText.trim().length < 8) {
+      setSimilarTickets([]);
+      setCheckingSimilar(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setCheckingSimilar(true);
+      try {
+        const response = await fetch("/api/ticket-similar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          signal: controller.signal,
+          body: JSON.stringify({
+            title: titleText,
+            description: descriptionText,
+            projectId: selectedProject
+          })
+        });
+        if (!response.ok) return;
+        const result = (await response.json()) as { tickets?: SimilarTicket[] };
+        setSimilarTickets(result.tickets ?? []);
+      } catch {
+        if (!controller.signal.aborted) setSimilarTickets([]);
+      } finally {
+        if (!controller.signal.aborted) setCheckingSimilar(false);
+      }
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [titleText, descriptionText, selectedProject]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -173,6 +217,9 @@ export function TicketForm() {
         <input
           name="title"
           required
+          maxLength={200}
+          value={titleText}
+          onChange={(event) => setTitleText(event.target.value)}
           className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
           placeholder="e.g. Revised floor plans"
         />
@@ -319,6 +366,9 @@ export function TicketForm() {
         <textarea
           name="description"
           required
+          maxLength={10000}
+          value={descriptionText}
+          onChange={(event) => setDescriptionText(event.target.value)}
           rows={5}
           className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm focus-ring"
           placeholder={
@@ -330,6 +380,31 @@ export function TicketForm() {
           }
         />
       </label>
+      {(checkingSimilar || similarTickets.length > 0) && (
+        <section aria-live="polite" className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <h2 className="text-sm font-bold text-amber-950">
+            {checkingSimilar ? "Checking for similar open tickets…" : "Similar open tickets"}
+          </h2>
+          {similarTickets.length > 0 ? (
+            <ul className="mt-2 grid gap-2">
+              {similarTickets.map((ticket) => (
+                <li key={ticket.id}>
+                  <Link href={`/tickets/${ticket.id}`} className="rounded font-semibold text-accent hover:underline focus-ring">
+                    {ticket.ticket_no ?? `Ticket #${ticket.id}`}: {ticket.title}
+                  </Link>
+                  <span className="ml-2 text-xs capitalize text-amber-900">
+                    {String(ticket.status).replaceAll("_", " ")}
+                    {ticket.project_name ? ` · ${ticket.project_name}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : checkingSimilar ? (
+            <p className="mt-1 text-xs text-amber-900">We’ll show any matching tickets you have permission to view.</p>
+          ) : null}
+          <p className="mt-2 text-xs text-amber-900">These are suggestions; you can still submit if this is a separate request.</p>
+        </section>
+      )}
       {selectedProject && (
         <p className="text-sm text-amber-800">
           Project-linked requests require approval from the project PM or a designated project approver before work can be routed.
@@ -342,6 +417,7 @@ export function TicketForm() {
           ref={fileInputRef}
           type="file"
           multiple
+          accept={ACCEPTED_TICKET_ATTACHMENT_TYPES}
           disabled={isSubmitting || Boolean(createdTicketId)}
           onChange={handleFileChange}
           className="sr-only"
@@ -423,20 +499,20 @@ export function TicketForm() {
           </ul>
         )}
         {fileIssues.map((issue) => (
-          <p key={issue} role="alert" className="rounded-md bg-red-50 px-3 py-2 text-xs text-urgent">
+          <div key={issue} className="text-xs"><FeedbackMessage type="error">
             {issue}
-          </p>
+          </FeedbackMessage></div>
         ))}
       </div>
 
-      {message && <p role="alert" className="text-sm text-red-700">{message}</p>}
+      {message && <FeedbackMessage type="error">{message}</FeedbackMessage>}
       {createdTicketId && (
         <Link href={`/tickets/${createdTicketId}`} className="text-sm font-semibold text-accent">
           Open created ticket
         </Link>
       )}
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
-        <Button type="submit" disabled={isSubmitting || Boolean(createdTicketId)} className="sm:w-fit">
+        <Button type="submit" loading={isSubmitting} disabled={Boolean(createdTicketId)} className="sm:w-fit">
           <Send className="h-4 w-4" />
           {isSubmitting ? "Opening ticket..." : "Open ticket"}
         </Button>

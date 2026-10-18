@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { Plus, Ticket } from "lucide-react";
-import { TicketTable } from "@/components/tickets/ticket-table";
-import { getTickets } from "@/lib/data";
+import { TicketWorkloadView } from "@/components/tickets/ticket-workload-view";
+import { getCurrentContext, getTickets } from "@/lib/data";
 
 export default async function TicketsPage() {
-  const tickets = await getTickets(100);
+  const [{ profile }, tickets] = await Promise.all([getCurrentContext(), getTickets(100)]);
   const openCount = tickets.filter(
     (ticket) => !["resolved", "closed", "rejected"].includes(ticket.status)
   ).length;
@@ -39,7 +39,7 @@ export default async function TicketsPage() {
           </Link>
         </div>
       </header>
-      <TicketTable tickets={tickets} />
+      <TicketWorkloadView tickets={tickets} currentUserId={profile?.id} />
     </div>
   );
 }

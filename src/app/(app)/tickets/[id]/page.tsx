@@ -4,7 +4,9 @@ import { ArrowLeft, LockKeyhole } from "lucide-react";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { AttachmentUploader } from "@/components/tickets/attachment-uploader";
 import { TicketActivityTimeline } from "@/components/tickets/ticket-activity-timeline";
+import { TicketHandoffForm } from "@/components/tickets/ticket-handoff-form";
 import { ProjectApprovalActions } from "@/components/tickets/project-approval-actions";
+import { RelatedTickets } from "@/components/tickets/related-tickets";
 import { Badge } from "@/components/ui/badge";
 import {
   getCurrentContext,
@@ -13,6 +15,7 @@ import {
   getTicketAttachments,
   getTicket,
   getTicketActivity,
+  getRelatedTickets,
   getProfileSummary,
   canApproveTicket
 } from "@/lib/data";
@@ -48,8 +51,8 @@ export default async function TicketDetailPage({
     if (!ticket) return { requester: null, assignee: null };
 
     const [requester, assignee] = await Promise.all([
-      ticket.requester_id ? getProfileSummary(ticket.requester_id) : null,
-      ticket.assigned_to ? getProfileSummary(ticket.assigned_to) : null
+      ticket.requester_id ? getProfileSummary(ticket.requester_id, id) : null,
+      ticket.assigned_to ? getProfileSummary(ticket.assigned_to, id) : null
     ]);
 
     return { requester, assignee };
@@ -60,11 +63,12 @@ export default async function TicketDetailPage({
       : Promise.resolve(false)
   );
 
-  const [ticket, people, activity, attachments, context, routeOptions, canApprove] = await Promise.all([
+  const [ticket, people, activity, attachments, relatedTickets, context, routeOptions, canApprove] = await Promise.all([
     ticketPromise,
     peoplePromise,
     getTicketActivity(id),
     getTicketAttachments(id),
+    getRelatedTickets(id),
     contextPromise,
     routeOptionsPromise,
     approvalAccessPromise
@@ -179,6 +183,12 @@ export default async function TicketDetailPage({
           />
         </section>
 
+        <RelatedTickets
+          ticketId={String(ticket.id)}
+          tickets={relatedTickets}
+          canManage={context.profile.user_side === "employee" || context.profile.user_side === "admin"}
+        />
+
         <TicketActivityTimeline
           key={String(ticket.id)}
           ticketId={String(ticket.id)}
@@ -193,6 +203,7 @@ export default async function TicketDetailPage({
         disciplines={routeOptions.disciplines}
         people={routeOptions.people}
       />
+      {(context.profile.user_side === "admin" || context.roleNames.some((role) => ["Coordinator", "Discipline Lead"].includes(role))) && !["resolved", "closed", "rejected"].includes(ticket.status) && <TicketHandoffForm ticketId={String(ticket.id)} employees={routeOptions.people} />}
       </div>
     </div>
   );

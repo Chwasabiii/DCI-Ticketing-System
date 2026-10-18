@@ -1,8 +1,12 @@
 import { Settings } from "lucide-react";
-import { getCurrentContext } from "@/lib/data";
+import { getCurrentContext, getNotificationPreferences } from "@/lib/data";
+import { NotificationPreferences } from "@/components/layout/notification-preferences";
 
 export default async function SettingsPage() {
-  const { profile, roleNames } = await getCurrentContext();
+  const [{ profile, roleNames }, preferences] = await Promise.all([
+    getCurrentContext(),
+    getNotificationPreferences()
+  ]);
 
   return (
     <div className="mx-auto max-w-4xl rounded-lg bg-white p-8 shadow-soft">
@@ -31,6 +35,7 @@ export default async function SettingsPage() {
           <dd className="mt-1 capitalize text-slate-900">{profile?.status ?? "active"}</dd>
         </div>
       </dl>
+      <NotificationPreferences initial={preferences} />
     </div>
   );
 }

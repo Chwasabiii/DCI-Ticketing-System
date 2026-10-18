@@ -11,7 +11,9 @@ import {
   Timer
 } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
-import { getCurrentContext, getTickets } from "@/lib/data";
+import { TicketReports } from "@/components/reports/ticket-reports";
+import { getAllTickets, getCurrentContext } from "@/lib/data";
+import { isTicketOverdue } from "@/lib/utils";
 
 function StatCard({
   label,
@@ -53,7 +55,7 @@ function StatCard({
 export default async function DashboardPage() {
   const [{ profile, roleNames }, tickets] = await Promise.all([
     getCurrentContext(),
-    getTickets(100)
+    getAllTickets()
   ]);
 
   const active = tickets.filter(
@@ -63,9 +65,7 @@ export default async function DashboardPage() {
   const resolved = tickets.filter(
     (ticket) => ticket.status === "resolved" || ticket.status === "closed"
   ).length;
-  const overdue = active.filter(
-    (ticket) => ticket.due_date && new Date(ticket.due_date) < new Date()
-  ).length;
+  const overdue = active.filter((ticket) => isTicketOverdue(ticket)).length;
   const roleLabel =
     profile?.user_side === "client"
       ? "Your support workspace"
@@ -137,11 +137,16 @@ export default async function DashboardPage() {
           label="Overdue"
           value={overdue}
           detail="Past their due date"
-          href="/overdue"
+          href={profile?.user_side === "client" ? "/tickets" : "/inbox?view=overdue"}
           icon={Clock3}
           tone="bg-amber-50 text-warning"
         />
       </section>
+
+      <TicketReports
+        tickets={tickets}
+        canExport={profile?.user_side === "admin" && profile.status === "active"}
+      />
 
       <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">

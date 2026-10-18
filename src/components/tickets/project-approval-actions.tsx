@@ -43,7 +43,7 @@ export function ProjectApprovalActions({ ticketId }: { ticketId: string }) {
         <form onSubmit={handleReview}>
           <input type="hidden" name="ticket_id" value={ticketId} />
           <input type="hidden" name="decision" value="approved" />
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" loading={submitting}>
             {submitting ? "Saving..." : "Approve"}
           </Button>
         </form>
@@ -61,7 +61,7 @@ export function ProjectApprovalActions({ ticketId }: { ticketId: string }) {
               className="rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-normal text-slate-800 focus-ring"
             />
           </label>
-          <Button type="submit" variant="secondary" disabled={submitting}>
+          <Button type="submit" variant="secondary" loading={submitting}>
             Reject request
           </Button>
         </form>
