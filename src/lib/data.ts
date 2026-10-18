@@ -8,12 +8,14 @@ import type {
   Profile,
   ProfileSummary,
   TicketAttachment,
+  TicketActivity,
+  TicketEvent,
   Ticket,
   UserRole
 } from "@/lib/types";
 
 export const getSessionUser = cache(async function getSessionUser() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase.auth.getClaims();
   const claims = data?.claims;
 
@@ -39,29 +41,22 @@ export async function getCurrentProfile() {
   const user = await getSessionUser();
   if (!user) return null;
 
-  const supabase = createClient();
-  const { data } = await supabase
+  const supabase = await createClient();
+  const { data, error } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", user.id)
-    .single<Profile>();
+    .maybeSingle<Profile>();
 
-  return (
-    data ?? {
-      id: user.id,
-      full_name: user.user_metadata?.full_name ?? user.email ?? "PMSG User",
-      email: user.email ?? null,
-      user_side: "client",
-      status: "active"
-    }
-  );
+  if (error) throw new Error(`Could not load your support profile: ${error.message}`);
+  return data;
 }
 
 export async function getCurrentRoles() {
   const user = await getSessionUser();
   if (!user) return [];
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("user_roles")
     .select("user_id, role_id, roles(name)")
@@ -89,21 +84,22 @@ export const getCurrentContext = cache(async function getCurrentContext() {
 });
 
 export async function getTickets(limit = 50) {
-  const supabase = createClient();
-  const { data } = await supabase
+  const supabase = await createClient();
+  const { data, error } = await supabase
     .from("tickets")
     .select(
-      "id, ticket_no, title, description, status, priority, requester_id, assigned_to, discipline_id, category_id, due_date, created_at, updated_at"
+      "id, ticket_no, title, description, status, priority, request_type, approval_status, approval_comment, reviewed_by, reviewed_at, is_confidential, requester_id, assigned_to, discipline_id, category_id, project_id, due_date, created_at, updated_at, project:projects(name)"
     )
     .order("created_at", { ascending: false })
     .limit(limit)
     .returns<Ticket[]>();
 
+  if (error) throw new Error(`Could not load tickets: ${error.message}`);
   return data ?? [];
 }
 
 export async function getTicket(id: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("tickets")
     .select("*, department:departments(name), project:projects(name)")
@@ -113,8 +109,18 @@ export async function getTicket(id: string) {
   return data;
 }
 
+export async function canApproveTicket(id: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("can_approve_project_ticket", {
+    p_ticket_id: Number(id)
+  });
+
+  if (error) throw new Error(`Could not verify project approval access: ${error.message}`);
+  return data === true;
+}
+
 export async function getProfileSummary(id: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("profiles")
     .select("id, full_name, email")
@@ -124,20 +130,86 @@ export async function getProfileSummary(id: string) {
   return data;
 }
 
-export async function getTicketComments(ticketId: string) {
-  const supabase = createClient();
-  const { data } = await supabase
-    .from("ticket_comments")
-    .select("*")
-    .eq("ticket_id", ticketId)
-    .order("created_at", { ascending: true })
-    .returns<Comment[]>();
+export async function getTicketActivity(ticketId: string): Promise<TicketActivity[]> {
+  const supabase = await createClient();
+  const [eventsResult, commentsResult] = await Promise.all([
+    supabase
+      .from("ticket_events")
+      .select("id, ticket_id, actor_id, event_type, from_status, to_status, note, created_at")
+      .eq("ticket_id", ticketId)
+      .order("created_at", { ascending: true })
+      .returns<TicketEvent[]>(),
+    supabase
+      .from("ticket_comments")
+      .select("id, ticket_id, author_id, body, is_internal, created_at")
+      .eq("ticket_id", ticketId)
+      .order("created_at", { ascending: true })
+      .returns<Comment[]>()
+  ]);
 
-  return data ?? [];
+  if (eventsResult.error) {
+    throw new Error(`Could not load ticket activity: ${eventsResult.error.message}`);
+  }
+  if (commentsResult.error) {
+    throw new Error(`Could not load ticket comments: ${commentsResult.error.message}`);
+  }
+
+  const events = eventsResult.data ?? [];
+  const comments = commentsResult.data ?? [];
+  const actorIds = Array.from(
+    new Set([
+      ...events.map((event) => event.actor_id),
+      ...comments.map((comment) => comment.author_id)
+    ].filter((id): id is string => Boolean(id)))
+  );
+
+  const profilesResult = actorIds.length
+    ? await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .in("id", actorIds)
+        .returns<ProfileSummary[]>()
+    : { data: [], error: null };
+
+  if (profilesResult.error) {
+    throw new Error(`Could not load ticket activity authors: ${profilesResult.error.message}`);
+  }
+
+  const profilesById = new Map(
+    (profilesResult.data ?? []).map((profile) => [profile.id, profile])
+  );
+  const activity: TicketActivity[] = [
+    ...events.map((event) => ({
+      kind: "event" as const,
+      id: event.id,
+      created_at: event.created_at,
+      actor: event.actor_id ? profilesById.get(event.actor_id) ?? null : null,
+      event_type: event.event_type,
+      from_status: event.from_status,
+      to_status: event.to_status,
+      note: event.note
+    })),
+    ...comments.map((comment) => ({
+      kind: "comment" as const,
+      id: comment.id,
+      created_at: comment.created_at,
+      actor: profilesById.get(comment.author_id) ?? null,
+      body: comment.body,
+      is_internal: comment.is_internal
+    }))
+  ];
+
+  return activity.sort((left, right) => {
+    const timeDifference =
+      Date.parse(left.created_at ?? "") - Date.parse(right.created_at ?? "");
+    if (Number.isFinite(timeDifference) && timeDifference !== 0) return timeDifference;
+    if (left.kind !== right.kind) return left.kind === "event" ? -1 : 1;
+    return Number(left.id) - Number(right.id);
+  });
 }
 
 export async function getTicketAttachments(ticketId: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("attachments")
     .select("id, ticket_id, uploaded_by, file_name, file_path, created_at")
@@ -159,7 +231,7 @@ export async function getTicketAttachments(ticketId: string) {
 }
 
 export async function getDisciplines() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("disciplines")
     .select("*")
@@ -170,7 +242,7 @@ export async function getDisciplines() {
 }
 
 export async function getCategories() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("categories")
     .select("*")
@@ -181,7 +253,7 @@ export async function getCategories() {
 }
 
 export async function getProfiles() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("profiles")
     .select("*")
@@ -192,7 +264,7 @@ export async function getProfiles() {
 }
 
 export async function getAssignableEmployees() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("profiles")
     .select("id, full_name, email, user_side, status, department_id, discipline_id")
@@ -205,7 +277,7 @@ export async function getAssignableEmployees() {
 }
 
 export async function getAssignableRoles() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("roles")
     .select("id, name")

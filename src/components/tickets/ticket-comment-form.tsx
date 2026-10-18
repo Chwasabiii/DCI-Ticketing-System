@@ -42,7 +42,7 @@ export function TicketCommentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg bg-white p-5 shadow-soft">
+    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
       <input type="hidden" name="ticket_id" value={ticketId} />
       <label className="grid gap-2">
         <span className="text-sm font-semibold text-slate-700">Add comment</span>
@@ -51,7 +51,7 @@ export function TicketCommentForm({
           rows={4}
           required
           disabled={isSubmitting}
-          className="rounded-md border border-slate-200 px-3 py-2 text-sm focus-ring"
+          className="rounded-xl border border-slate-200 px-3 py-3 text-sm focus-ring"
         />
       </label>
       {allowInternalNotes && (

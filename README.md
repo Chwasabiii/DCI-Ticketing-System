@@ -38,6 +38,10 @@ Still incomplete or needing confirmation:
 
 - Notifications page is a placeholder; the schema has a notifications table, but the app does not yet populate and display notifications.
 - Admins can invite client and employee accounts by email and manage project names, codes, locations, and Planned/Ongoing/Completed statuses. Ticket submitters can select Planned and Ongoing projects.
+- Admins can assign a PM and project approvers. Project-linked tickets require one of them to approve or reject before PMSG can route or work them.
+- Ticket submission supports General, Access Request, and Incident Report request types, alongside the existing optional category selector. Ticket submitters can select Planned and Ongoing projects.
+- Requesters can mark tickets confidential. Confidential ticket data and files are restricted by database policies to the requester, administrators, assigned employees, and project approvers who need to review the request.
+- Signed-in users can read published FAQs; administrators create, edit, publish, and delete them. Ticket submitters can select Planned and Ongoing projects.
 - Department, discipline, and category management pages remain read-only tables.
 - Accounts with no sign-in for six months are marked inactive (not deleted); admins are excluded and can restore archived accounts.
 - The dashboard's discipline mix uses illustrative values rather than counts calculated from tickets.
@@ -49,7 +53,7 @@ Still incomplete or needing confirmation:
 
 ## Technology
 
-- **Next.js 14 App Router** and **React** render the pages and handle server actions.
+- **Next.js 16 App Router** and **React 19** render the pages and handle server actions.
 - **TypeScript** describes application data and catches many code mistakes.
 - **Tailwind CSS** styles the pages; shared global CSS is in `src/app/globals.css`.
 - **Supabase Auth** manages accounts and sessions.
@@ -74,8 +78,8 @@ src/                    Application source code
       data.ts             Supabase queries used by pages
       navigation.ts       Menu items for user sides and employee roles
       types.ts            Shared TypeScript data types
-      supabase/           Supabase browser, server, and middleware clients
-   middleware.ts         Refreshes/maintains Supabase auth sessions
+      supabase/           Supabase browser, server, and proxy clients
+   proxy.ts              Refreshes/maintains Supabase auth sessions
 supabase/schema.sql     Database tables, triggers, policies, sample data
 logs/                   Local development logs (ignored by Git)
 ```
@@ -111,7 +115,7 @@ The matching source file is under `src/app/`. For example, `/tickets/new` is imp
 
 ### Prerequisites
 
-- Node.js supported by Next.js 14 and npm.
+- Node.js supported by Next.js 16 and npm.
 - A Supabase project with its project URL and anon/public key.
 
 ### Configure Supabase
@@ -123,6 +127,12 @@ The matching source file is under `src/app/`. For example, `/tickets/new` is imp
    Run `supabase/migrations/20261012_admin_accounts_and_auto_archive.sql` on an existing database to restrict archived-account access and schedule the daily six-month inactivity archive.
    Run `supabase/migrations/20261015_project_statuses.sql` on an existing database to add Planned/Ongoing/Completed project statuses.
    Run `supabase/migrations/20261015_invitation_acceptance.sql` on an existing database to enable invitees to set their own password and profile name.
+   Run `supabase/migrations/20261017_project_approval_workflow.sql` after the schema on every database to add project approvers, ticket request types, and approval gating.
+   Then run `supabase/migrations/20261018_confidential_tickets_and_faqs.sql` to apply confidential-ticket access policies and the FAQ table.
+   Run `supabase/migrations/20261019_seed_faq_examples.sql` to add starter FAQ examples. They can be edited or unpublished by an administrator.
+   Run `supabase/migrations/20261020_ticket_activity_timeline.sql` to publish ticket audit events for live activity updates and record readable routing and assignment details.
+   Run `supabase/migrations/20261021_repair_missing_profiles.sql` to create default client profiles for any existing Auth accounts that are missing one and ensure future accounts get a profile.
+   Run `supabase/migrations/20261022_ticket_requester_read_policy.sql` to ensure requesters can read their own newly created ticket rows when the app uses `INSERT ... RETURNING`.
 3. Create a test user in Supabase Authentication. The project currently has a sign-in page, not a public sign-up page.
 4. For the first administrator, update the new user's profile in the SQL Editor, replacing the email:
 
@@ -141,6 +151,7 @@ The matching source file is under `src/app/`. For example, `/tickets/new` is imp
    ```
 
    `.RedirectTo` uses the app URL passed by the invitation action. The invite link first opens an acceptance page; the invitee must click **Accept invitation** to verify it. This prevents email security scanners that automatically open links from consuming the one-time token. Add the callback URL (for example `http://localhost:3000/auth/callback` and your deployed `https://your-app.example/auth/callback`) to **Authentication > URL Configuration > Redirect URLs**. Set `NEXT_PUBLIC_SITE_URL` to the app's origin in `.env.local` and in the deployed server environment.
+   If the app displays **Invitation link incomplete**, the link in the delivered email did not include `token_hash` and `type`. Saving the Redirect URLs allow-list is not sufficient; confirm the **Invite user** email template link above is saved, then send a new invitation.
 8. Review the SQL policies, invitation roles, and archiving rules with the project owner. The schema itself labels these access rules as proposed.
 
 ### Configure and Start the App
@@ -200,6 +211,8 @@ If the development site suddenly loses styling or reports missing `/_next` asset
 - The schema is `supabase/schema.sql`; it includes sample departments, disciplines, projects, and employee roles.
 - Browser and server clients use the Supabase anon key plus the signed-in session so database RLS remains active.
 - User invitations use a server-only service-role client and are restricted to active administrators. Disable public sign-ups in Supabase Auth.
+- Project-linked tickets require approval by the assigned PM or any designated project approver. Rejections require a reason. Projectless requests do not require approval.
+- Confidential ticket access is enforced by Supabase row-level security and storage policies, not just by hiding tickets in the interface.
 - A daily Supabase Cron job marks non-admin profiles inactive after six months without a sign-in. Never-used accounts use their creation date; records are retained and RLS blocks archived users. Admins can restore them.
 - Never disable RLS to make a page appear to work. Fix the policy or the user's role and verify access with the intended account.
 - Treat sample records and the proposed policies as development material until DCI approves the production data model and permissions.

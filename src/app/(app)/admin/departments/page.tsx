@@ -7,7 +7,7 @@ export default async function DepartmentsPage() {
   const { profile } = await getCurrentContext();
   if (profile?.user_side !== "admin") redirect("/dashboard");
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase.from("departments").select("*").order("name");
 
   return (

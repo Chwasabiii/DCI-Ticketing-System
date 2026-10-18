@@ -9,7 +9,7 @@ const privateNoCacheHeaders = {
 };
 
 export async function GET() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { session }
   } = await supabase.auth.getSession();
@@ -21,22 +21,33 @@ export async function GET() {
     );
   }
 
-  const [categoriesResult, disciplinesResult, departmentsResult, projectsResult] = await Promise.all([
+  const [
+    categoriesResult,
+    disciplinesResult,
+    departmentsResult,
+    projectsResult,
+    projectApproversResult,
+    activeProfilesResult
+  ] = await Promise.all([
     supabase.from("categories").select("id, name, discipline_id").order("name"),
     supabase.from("disciplines").select("id, name, lead_user_id").order("name"),
     supabase.from("departments").select("id, name").order("name"),
     supabase
       .from("projects")
-      .select("id, project_code, name, location, status")
+      .select("id, project_code, name, location, status, pm_user_id")
       .in("status", ["planned", "ongoing"])
-      .order("name")
+      .order("name"),
+    supabase.from("project_approvers").select("project_id, user_id"),
+    supabase.from("profiles").select("id").eq("status", "active")
   ]);
 
   if (
     categoriesResult.error ||
     disciplinesResult.error ||
     departmentsResult.error ||
-    projectsResult.error
+    projectsResult.error ||
+    projectApproversResult.error ||
+    activeProfilesResult.error
   ) {
     return NextResponse.json(
       { error: "Could not load ticket options." },
@@ -44,12 +55,25 @@ export async function GET() {
     );
   }
 
+  const activeIds = new Set((activeProfilesResult.data ?? []).map((profile) => profile.id));
+  const activeApproverProjectIds = new Set(
+    (projectApproversResult.data ?? [])
+      .filter((approver) => activeIds.has(approver.user_id))
+      .map((approver) => String(approver.project_id))
+  );
+  const projects = (projectsResult.data ?? [])
+    .filter((project) =>
+      (project.pm_user_id !== null && activeIds.has(project.pm_user_id)) ||
+      activeApproverProjectIds.has(String(project.id))
+    )
+    .map(({ pm_user_id: _pmUserId, ...project }) => project);
+
   return NextResponse.json(
     {
       categories: categoriesResult.data ?? [],
       disciplines: disciplinesResult.data ?? [],
       departments: departmentsResult.data ?? [],
-      projects: projectsResult.data ?? []
+      projects
     },
     {
       headers: {

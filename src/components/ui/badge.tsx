@@ -15,7 +15,10 @@ const statusStyles: Record<string, string> = {
   low: "bg-slate-100 text-slate-700 ring-slate-200",
   planned: "bg-violet-50 text-violet-700 ring-violet-200",
   ongoing: "bg-green-50 text-green-700 ring-green-200",
-  completed: "bg-slate-100 text-slate-700 ring-slate-200"
+  completed: "bg-slate-100 text-slate-700 ring-slate-200",
+  confidential: "bg-violet-50 text-violet-700 ring-violet-200",
+  access_request: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+  incident_report: "bg-orange-50 text-orange-700 ring-orange-200"
 };
 
 export function Badge({

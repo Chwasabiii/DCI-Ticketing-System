@@ -47,6 +47,8 @@ export function TicketActions({
     roles.includes("Personnel") ||
     roles.includes("Discipline Lead");
   const isClient = profile.user_side === "client";
+  const approvalBlocksWork =
+    ticket.approval_status === "pending" || ticket.approval_status === "rejected";
   const editableStatuses = canResolve
     ? ticketStatuses
     : ticketStatuses.filter((status) => !["resolved", "closed", "rejected"].includes(status));
@@ -100,13 +102,20 @@ export function TicketActions({
 
   return (
     <div className="grid gap-4">
-      <div className="rounded-lg bg-white p-5 shadow-soft">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-navy">Handle this request</h2>
           <Badge value={ticket.status} />
         </div>
         <div className="grid gap-3">
-          {canRoute && (
+          {approvalBlocksWork && (
+            <p className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
+              {ticket.approval_status === "pending"
+                ? "Routing and work are paused until a project approver approves this request."
+                : "This request was rejected by a project approver and cannot be routed."}
+            </p>
+          )}
+          {canRoute && !approvalBlocksWork && (
             <form onSubmit={handleRoute} className="grid gap-3 border-b border-slate-100 pb-4">
               <p className="text-xs leading-5 text-slate-600">
                 Review the request, choose its support group and priority, then assign an active employee.
@@ -116,7 +125,7 @@ export function TicketActions({
                 Support group
                 <select
                   name="discipline_id"
-                  className="rounded-md border border-slate-200 px-3 py-2 text-sm font-normal focus-ring"
+                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
                   defaultValue={ticket.discipline_id ?? ""}
                 >
                   <option value="">Unassigned</option>
@@ -129,7 +138,7 @@ export function TicketActions({
                 Assign to
                 <select
                   name="assigned_to"
-                  className="rounded-md border border-slate-200 px-3 py-2 text-sm font-normal focus-ring"
+                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
                   defaultValue={ticket.assigned_to ?? ""}
                 >
                   <option value="">Leave unassigned</option>
@@ -144,7 +153,7 @@ export function TicketActions({
                 Priority
                 <select
                   name="priority"
-                  className="rounded-md border border-slate-200 px-3 py-2 text-sm font-normal focus-ring"
+                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
                   defaultValue={ticket.priority ?? "medium"}
                 >
                   <option value="low">Low</option>
@@ -163,7 +172,7 @@ export function TicketActions({
               </Button>
             </form>
           )}
-          {(canRoute || canResolve) && (
+          {(canRoute || canResolve) && !approvalBlocksWork && (
             <form onSubmit={handleStatusUpdate} className="grid gap-3">
               <input type="hidden" name="ticket_id" value={ticket.id} />
               <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
@@ -171,7 +180,7 @@ export function TicketActions({
                 <select
                   name="status"
                   defaultValue={ticket.status}
-                  className="rounded-md border border-slate-200 px-3 py-2 text-sm font-normal focus-ring"
+                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
                 >
                   {editableStatuses.map((status) => (
                     <option key={status} value={status}>
@@ -188,7 +197,7 @@ export function TicketActions({
                     rows={3}
                     defaultValue={ticket.resolution_notes ?? ""}
                     placeholder="Record what was done before marking resolved."
-                    className="rounded-md border border-slate-200 px-3 py-2 text-sm font-normal focus-ring"
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
                   />
                 </label>
               )}

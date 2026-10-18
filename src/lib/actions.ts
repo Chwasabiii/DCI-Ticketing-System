@@ -26,7 +26,7 @@ export async function signIn(_: unknown, formData: FormData) {
     return { error: "Enter your email and password." };
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) return { error: error.message };
@@ -51,13 +51,13 @@ export async function signIn(_: unknown, formData: FormData) {
 }
 
 export async function signOut() {
-  const supabase = createClient();
+  const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
 }
 
 export async function inviteUser(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -192,7 +192,7 @@ export async function verifyInvitation(formData: FormData) {
     return { error: "The invitation link is missing or invalid. Ask an administrator to send a new invitation." };
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { error } = await supabase.auth.verifyOtp({
     token_hash: tokenHash,
     type: "invite"
@@ -223,7 +223,7 @@ export async function completeInvitation(formData: FormData) {
     return { error: "The passwords do not match." };
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
     error: userError
@@ -267,7 +267,7 @@ export async function completeInvitation(formData: FormData) {
 }
 
 export async function reactivateUser(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -294,7 +294,7 @@ export async function reactivateUser(formData: FormData) {
 }
 
 export async function createProject(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -340,7 +340,7 @@ export async function createProject(formData: FormData) {
 }
 
 export async function updateProjectStatus(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -378,17 +378,95 @@ export async function updateProjectStatus(formData: FormData) {
   return { success: "Project status updated." };
 }
 
+export async function setProjectApprovers(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to assign project approvers." };
+
+  const { data: actor } = await supabase
+    .from("profiles")
+    .select("user_side, status")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (actor?.user_side !== "admin" || actor.status !== "active") {
+    return { error: "Only active administrators can assign project approvers." };
+  }
+
+  const projectId = value(formData, "project_id");
+  const pmUserId = value(formData, "pm_user_id");
+  const approverIds = formData
+    .getAll("approvers")
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (
+    !projectId ||
+    !/^\d+$/.test(projectId) ||
+    (pmUserId !== null && !uuidPattern.test(pmUserId)) ||
+    approverIds.some((id) => !uuidPattern.test(id)) ||
+    (!pmUserId && approverIds.length === 0)
+  ) {
+    return { error: "Choose a valid PM or at least one project approver." };
+  }
+
+  const { error } = await supabase.rpc("set_project_approvers", {
+    p_project_id: Number(projectId),
+    p_pm_user_id: pmUserId,
+    p_approver_ids: approverIds
+  });
+  if (error) return { error: `Project approvers could not be saved: ${error.message}` };
+
+  revalidatePath("/admin/projects");
+  revalidatePath("/approvals");
+  return { success: "Project approvers saved." };
+}
+
 export async function createTicket(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
 
   if (!user) return { error: "Please sign in before submitting a ticket." };
 
+  const { data: requesterProfile, error: profileError } = await supabase
+    .from("profiles")
+    .select("status, user_side")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (profileError) {
+    return { error: `Could not verify your support profile: ${profileError.message}` };
+  }
+  if (!requesterProfile) {
+    return {
+      error: "Your account is missing its support profile. Ask an administrator to run the latest Supabase migrations."
+    };
+  }
+  if (requesterProfile.status !== "active") {
+    return { error: "This account is archived. Contact an administrator to restore access." };
+  }
+
+  const { data: currentSide, error: currentSideError } =
+    await supabase.rpc("current_side");
+  if (currentSideError) {
+    return {
+      error: `Could not verify your database access role: ${currentSideError.message}`
+    };
+  }
+  if (!currentSide) {
+    return {
+      error: `Supabase does not recognize this account as active (profile status: ${requesterProfile.status}, account type: ${requesterProfile.user_side}). Sign out and back in; if this continues, ask an administrator to verify the profile and tickets INSERT policy.`
+    };
+  }
+
   const title = value(formData, "title");
   const description = value(formData, "description");
   const projectId = value(formData, "project_id");
+  const requestedType = value(formData, "request_type") ?? "general";
+  const requestTypes = ["general", "access_request", "incident_report"] as const;
+  const requestType = requestTypes.find((option) => option === requestedType);
   const requestedPriority = value(formData, "priority");
   const priorities: Priority[] = ["low", "medium", "high", "urgent"];
   const priority = priorities.find((option) => option === requestedPriority) ?? "medium";
@@ -396,6 +474,7 @@ export async function createTicket(formData: FormData) {
   if (!title || !description) {
     return { error: "Enter a title and details for your request." };
   }
+  if (!requestType) return { error: "Choose a valid request type." };
 
   if (projectId) {
     if (!/^\d+$/.test(projectId)) {
@@ -403,7 +482,7 @@ export async function createTicket(formData: FormData) {
     }
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .select("id")
+      .select("id, pm_user_id")
       .eq("id", projectId)
       .in("status", ["planned", "ongoing"])
       .maybeSingle();
@@ -411,6 +490,34 @@ export async function createTicket(formData: FormData) {
       return { error: `Could not validate the selected project: ${projectError.message}` };
     }
     if (!project) return { error: "Select a Planned or Ongoing project." };
+
+    const { data: designatedApprovers, error: designatedApproverError } = await supabase
+      .from("project_approvers")
+      .select("user_id")
+      .eq("project_id", projectId);
+    if (designatedApproverError) {
+      return { error: `Could not validate project approvers: ${designatedApproverError.message}` };
+    }
+
+    const candidateIds = [
+      project.pm_user_id,
+      ...(designatedApprovers ?? []).map((approver) => approver.user_id)
+    ].filter((id): id is string => Boolean(id));
+    if (candidateIds.length === 0) {
+      return { error: "An administrator must assign a PM or project approver before tickets can be submitted for this project." };
+    }
+
+    const { data: activeApprovers, error: activeApproverError } = await supabase
+      .from("profiles")
+      .select("id")
+      .in("id", candidateIds)
+      .eq("status", "active");
+    if (activeApproverError) {
+      return { error: `Could not validate project approvers: ${activeApproverError.message}` };
+    }
+    if (!activeApprovers?.length) {
+      return { error: "An administrator must assign an active PM or project approver before tickets can be submitted for this project." };
+    }
   }
 
   const { data: ticket, error } = await supabase
@@ -423,6 +530,8 @@ export async function createTicket(formData: FormData) {
       project_id: projectId,
       category_id: value(formData, "category_id"),
       discipline_id: value(formData, "discipline_id"),
+      request_type: requestType,
+      is_confidential: formData.get("is_confidential") === "on",
       priority,
       status: "open"
     })
@@ -430,6 +539,11 @@ export async function createTicket(formData: FormData) {
     .single();
 
   if (error || !ticket) {
+    if (error?.code === "42501") {
+      return {
+        error: `Supabase rejected ticket creation with row-level security even though the INSERT checks passed (database role: ${currentSide}, profile status: ${requesterProfile.status}, account type: ${requesterProfile.user_side}, requester: authenticated user, status: open, assignee: unassigned). Apply the latest ticket requester read-policy migration, then retry.`
+      };
+    }
     return { error: error?.message ?? "The ticket could not be created." };
   }
 
@@ -439,7 +553,7 @@ export async function createTicket(formData: FormData) {
 }
 
 export async function addComment(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -474,7 +588,7 @@ export async function addComment(formData: FormData) {
 }
 
 export async function updateTicketStatus(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -495,6 +609,16 @@ export async function updateTicketStatus(formData: FormData) {
   const status = allowedStatuses.find((option) => option === requestedStatus);
 
   if (!ticketId || !status) return { error: "Choose a valid ticket status." };
+
+  const { data: currentTicket, error: ticketLookupError } = await supabase
+    .from("tickets")
+    .select("approval_status")
+    .eq("id", ticketId)
+    .maybeSingle();
+  if (ticketLookupError) return { error: ticketLookupError.message };
+  if (currentTicket?.approval_status === "pending" || currentTicket?.approval_status === "rejected") {
+    return { error: "This ticket cannot be worked until project approval is complete." };
+  }
 
   const update: { status: TicketStatus; resolution_notes?: string } = { status };
   const resolutionNotes = value(formData, "resolution_notes");
@@ -519,7 +643,7 @@ export async function updateTicketStatus(formData: FormData) {
 }
 
 export async function routeTicket(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -545,6 +669,16 @@ export async function routeTicket(formData: FormData) {
 
   if (!ticketId || !priority || !status) {
     return { error: "Choose a valid discipline, priority, assignee, and status." };
+  }
+
+  const { data: currentTicket, error: ticketLookupError } = await supabase
+    .from("tickets")
+    .select("approval_status")
+    .eq("id", ticketId)
+    .maybeSingle();
+  if (ticketLookupError) return { error: ticketLookupError.message };
+  if (currentTicket?.approval_status === "pending" || currentTicket?.approval_status === "rejected") {
+    return { error: "This ticket cannot be routed until project approval is complete." };
   }
 
   if (assignedTo) {
@@ -579,4 +713,121 @@ export async function routeTicket(formData: FormData) {
   revalidatePath("/tickets");
   revalidatePath("/dashboard");
   return { success: "Ticket routing and assignment saved." };
+}
+
+export async function reviewProjectTicket(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to review this project ticket." };
+
+  const ticketId = value(formData, "ticket_id");
+  const decision = value(formData, "decision");
+  const comment = value(formData, "comment");
+  if (!ticketId || !/^\d+$/.test(ticketId) || !["approved", "rejected"].includes(decision ?? "")) {
+    return { error: "Choose a valid approval decision." };
+  }
+  if (decision === "rejected" && !comment) {
+    return { error: "Enter a reason when rejecting a ticket." };
+  }
+  if ((comment?.length ?? 0) > 2000) {
+    return { error: "Approval comments must be 2000 characters or fewer." };
+  }
+
+  const { error } = await supabase.rpc("review_project_ticket", {
+    p_ticket_id: Number(ticketId),
+    p_decision: decision,
+    p_comment: comment
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath("/approvals");
+  revalidatePath("/tickets");
+  revalidatePath("/dashboard");
+  revalidatePath("/queue");
+  return { success: decision === "approved" ? "Ticket approved." : "Ticket rejected." };
+}
+
+export async function saveFaq(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to manage FAQs." };
+
+  const { data: actor } = await supabase
+    .from("profiles")
+    .select("user_side, status")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (actor?.user_side !== "admin" || actor.status !== "active") {
+    return { error: "Only active administrators can manage FAQs." };
+  }
+
+  const id = value(formData, "faq_id");
+  const question = value(formData, "question");
+  const answer = value(formData, "answer");
+  const displayOrderRaw = value(formData, "display_order") ?? "0";
+  const displayOrder = Number(displayOrderRaw);
+  if ((id && !/^\d+$/.test(id)) || !question || !answer) {
+    return { error: "Enter a question and answer." };
+  }
+  if (question.length > 300 || answer.length > 5000) {
+    return { error: "Questions are limited to 300 characters and answers to 5000 characters." };
+  }
+  if (!Number.isInteger(displayOrder) || displayOrder < 0 || displayOrder > 10000) {
+    return { error: "Display order must be a whole number from 0 to 10000." };
+  }
+
+  const entry = {
+    question,
+    answer,
+    display_order: displayOrder,
+    is_published: formData.get("is_published") === "on"
+  };
+  const result = id
+    ? await supabase.from("faq_entries").update(entry).eq("id", Number(id)).select("id").maybeSingle()
+    : await supabase.from("faq_entries").insert(entry).select("id").single();
+
+  if (result.error) return { error: `FAQ could not be saved: ${result.error.message}` };
+  if (!result.data) return { error: "The FAQ was not found or could not be saved." };
+
+  revalidatePath("/faqs");
+  revalidatePath("/admin/faqs");
+  return { success: id ? "FAQ updated." : "FAQ added." };
+}
+
+export async function deleteFaq(formData: FormData) {
+  const supabase = await createClient();
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to manage FAQs." };
+
+  const { data: actor } = await supabase
+    .from("profiles")
+    .select("user_side, status")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (actor?.user_side !== "admin" || actor.status !== "active") {
+    return { error: "Only active administrators can manage FAQs." };
+  }
+
+  const id = value(formData, "faq_id");
+  if (!id || !/^\d+$/.test(id)) return { error: "Choose a valid FAQ." };
+
+  const { data, error } = await supabase
+    .from("faq_entries")
+    .delete()
+    .eq("id", Number(id))
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: `FAQ could not be deleted: ${error.message}` };
+  if (!data) return { error: "The FAQ was not found or could not be deleted." };
+
+  revalidatePath("/faqs");
+  revalidatePath("/admin/faqs");
+  return { success: "FAQ deleted." };
 }

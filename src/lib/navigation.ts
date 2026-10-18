@@ -18,6 +18,19 @@ export type NavItem = {
   icon: NavIcon;
 };
 
+export function isNavItemActive(pathname: string, href: string): boolean {
+  const normalizedPath = pathname.replace(/\/+$/, "") || "/";
+  const normalizedHref = href.replace(/\/+$/, "") || "/";
+
+  if (normalizedHref === "/dashboard" && normalizedPath === "/") return true;
+  if (normalizedPath === normalizedHref) return true;
+  if (normalizedHref === "/tickets" && normalizedPath === "/tickets/new") {
+    return false;
+  }
+
+  return normalizedPath.startsWith(`${normalizedHref}/`);
+}
+
 export function getNavItems(
   userSide?: UserSide,
   roles: EmployeeRole[] = []
@@ -26,7 +39,9 @@ export function getNavItems(
     return [
       { label: "Dashboard", href: "/dashboard", icon: "home" },
       { label: "My Tickets", href: "/tickets", icon: "clipboard" },
-      { label: "Submit a Ticket", href: "/tickets/new", icon: "plus" }
+      { label: "FAQs", href: "/faqs", icon: "clipboard" },
+      { label: "Approvals", href: "/approvals", icon: "shield" },
+      { label: "Open a Ticket", href: "/tickets/new", icon: "plus" }
     ];
   }
 
@@ -34,8 +49,11 @@ export function getNavItems(
     return [
       { label: "Dashboard", href: "/dashboard", icon: "home" },
       { label: "Incoming Queue", href: "/queue", icon: "inbox" },
+      { label: "FAQs", href: "/faqs", icon: "clipboard" },
+      { label: "Approvals", href: "/approvals", icon: "shield" },
       { label: "All Tickets", href: "/tickets", icon: "clipboard" },
       { label: "Users", href: "/admin/users", icon: "users" },
+      { label: "Manage FAQs", href: "/admin/faqs", icon: "clipboard" },
       { label: "Projects", href: "/admin/projects", icon: "clipboard" },
       { label: "Departments", href: "/admin/departments", icon: "workflow" },
       { label: "Disciplines", href: "/admin/disciplines", icon: "shield" },
@@ -45,7 +63,9 @@ export function getNavItems(
 
   const items: NavItem[] = [
     { label: "Dashboard", href: "/dashboard", icon: "home" },
-    { label: "Submit a Ticket", href: "/tickets/new", icon: "plus" }
+    { label: "FAQs", href: "/faqs", icon: "clipboard" },
+    { label: "Approvals", href: "/approvals", icon: "shield" },
+    { label: "Open a Ticket", href: "/tickets/new", icon: "plus" }
   ];
 
   if (roles.includes("Coordinator")) {

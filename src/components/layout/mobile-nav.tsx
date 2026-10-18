@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Bell,
@@ -11,7 +14,7 @@ import {
   Users,
   Workflow
 } from "lucide-react";
-import type { NavIcon, NavItem } from "@/lib/navigation";
+import { isNavItemActive, type NavIcon, type NavItem } from "@/lib/navigation";
 
 const icons: Record<NavIcon, typeof Home> = {
   "bar-chart": BarChart3,
@@ -27,22 +30,30 @@ const icons: Record<NavIcon, typeof Home> = {
 };
 
 export function MobileNav({ items }: { items: NavItem[] }) {
+  const pathname = usePathname();
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t border-slate-200 bg-white p-2 shadow-soft md:hidden">
-      {items.slice(0, 4).map((item) => {
+    <nav aria-label="Mobile navigation" className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(20,40,75,0.08)] backdrop-blur md:hidden">
+      <div className="flex gap-1 overflow-x-auto">
+      {items.map((item) => {
         const Icon = icons[item.icon];
+        const active = isNavItemActive(pathname, item.href);
 
         return (
           <Link
             key={item.href}
             href={item.href}
-            className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-md text-xs font-medium text-slate-600 hover:bg-slate-50"
+            aria-current={active ? "page" : undefined}
+            className={`flex min-h-14 min-w-[4.5rem] flex-1 flex-col items-center justify-center gap-1 rounded-xl px-2 text-[10px] font-semibold transition-colors ${
+              active ? "bg-blue-50 text-accent" : "text-slate-500 hover:bg-slate-50"
+            }`}
           >
             <Icon className="h-5 w-5" />
-            <span className="max-w-full truncate">{item.label}</span>
+            <span className="max-w-full truncate">{item.label === "Open a Ticket" ? "Open ticket" : item.label}</span>
           </Link>
         );
       })}
+      </div>
     </nav>
   );
 }

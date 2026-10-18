@@ -3,7 +3,8 @@ import { getTickets } from "@/lib/data";
 
 export default async function QueuePage() {
   const tickets = (await getTickets(100)).filter((ticket) =>
-    ["open", "under_review"].includes(ticket.status)
+    ["open", "under_review"].includes(ticket.status) &&
+    !["pending", "rejected"].includes(ticket.approval_status ?? "")
   );
 
   return (

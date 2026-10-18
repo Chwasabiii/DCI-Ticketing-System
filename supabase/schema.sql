@@ -209,6 +209,9 @@ create trigger tickets_set_updated_at
 -- 4c. Write the audit trail automatically
 create or replace function public.log_ticket_event()
 returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  discipline_label text;
+  assignee_label text;
 begin
   if tg_op = 'INSERT' then
     insert into public.ticket_events (ticket_id, actor_id, event_type, to_status)
@@ -219,12 +222,33 @@ begin
       values (new.id, auth.uid(), 'status_changed', old.status::text, new.status::text);
     end if;
     if new.discipline_id is distinct from old.discipline_id then
+      select d.name into discipline_label
+      from public.disciplines d
+      where d.id = new.discipline_id;
       insert into public.ticket_events (ticket_id, actor_id, event_type, note)
-      values (new.id, auth.uid(), 'routed', 'Discipline changed');
+      values (
+        new.id,
+        auth.uid(),
+        'routed',
+        case when new.discipline_id is null then 'Discipline cleared'
+             else 'Routed to ' || coalesce(discipline_label, 'a discipline')
+        end
+      );
     end if;
     if new.assigned_to is distinct from old.assigned_to then
+      select coalesce(nullif(btrim(p.full_name), ''), p.email)
+        into assignee_label
+      from public.profiles p
+      where p.id = new.assigned_to;
       insert into public.ticket_events (ticket_id, actor_id, event_type, note)
-      values (new.id, auth.uid(), 'assigned', 'Assignee changed');
+      values (
+        new.id,
+        auth.uid(),
+        'assigned',
+        case when new.assigned_to is null then 'Assignee cleared'
+             else 'Assigned to ' || coalesce(assignee_label, 'a teammate')
+        end
+      );
     end if;
   end if;
   return new;
@@ -321,6 +345,8 @@ end $$;
 create policy "tickets read" on public.tickets for select to authenticated
   using (public.current_side() is not null
          and (requester_id = auth.uid() or public.current_side() in ('employee','admin')));
+create policy "tickets requester read own" on public.tickets for select to authenticated
+  using (requester_id = auth.uid() and public.current_side() is not null);
 create policy "tickets insert" on public.tickets for insert to authenticated
   with check (public.current_side() is not null and requester_id = auth.uid());
 create policy "tickets update" on public.tickets for update to authenticated
@@ -339,7 +365,7 @@ create policy "comments insert" on public.ticket_comments for insert to authenti
               and exists (select 1 from public.tickets t where t.id = ticket_id)
               and (not is_internal or public.current_side() <> 'client'));
 
--- Publish ticket comments for ticket-scoped Supabase Realtime subscriptions
+-- Publish ticket activity for ticket-scoped Supabase Realtime subscriptions
 do $$
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
@@ -350,6 +376,15 @@ begin
          and tablename = 'ticket_comments'
      ) then
     execute 'alter publication supabase_realtime add table public.ticket_comments';
+  end if;
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (
+       select 1 from pg_publication_tables
+       where pubname = 'supabase_realtime'
+         and schemaname = 'public'
+         and tablename = 'ticket_events'
+     ) then
+    execute 'alter publication supabase_realtime add table public.ticket_events';
   end if;
 end $$;
 

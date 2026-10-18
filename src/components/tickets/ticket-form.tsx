@@ -11,7 +11,7 @@ import {
   MAX_TICKET_ATTACHMENTS,
   uploadTicketAttachments
 } from "@/lib/attachments";
-import type { Category, Department, Discipline, Priority, Project } from "@/lib/types";
+import type { Category, Department, Discipline, Priority, Project, RequestType } from "@/lib/types";
 
 const priorities: Priority[] = ["low", "medium", "high", "urgent"];
 
@@ -37,6 +37,8 @@ export function TicketForm() {
   const [isDragging, setIsDragging] = useState(false);
   const [selectedDiscipline, setSelectedDiscipline] = useState("");
   const [selectedPriority, setSelectedPriority] = useState<Priority>("medium");
+  const [selectedProject, setSelectedProject] = useState("");
+  const [requestType, setRequestType] = useState<RequestType>("general");
   const [message, setMessage] = useState<string | null>(null);
   const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -164,24 +166,24 @@ export function TicketForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="grid gap-5 rounded-lg bg-white p-5 shadow-soft sm:p-6">
-      <div className="grid gap-4 md:grid-cols-3">
-        <label className="grid gap-2">
+    <form onSubmit={handleSubmit} className="grid min-w-0 gap-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-7">
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+        <label className="grid min-w-0 gap-2">
           <span className="text-sm font-semibold text-slate-700">Ticket title <span className="text-urgent">*</span></span>
         <input
           name="title"
           required
-          className="rounded-md border border-slate-200 px-3 py-2 text-sm focus-ring"
-          placeholder="e.g. Revised architectural floor plans"
+          className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
+          placeholder="e.g. Revised floor plans"
         />
       </label>
-        <label className="grid gap-2">
+        <label className="grid min-w-0 gap-2">
           <span className="text-sm font-semibold text-slate-700">Requesting department{departments.length > 0 && <span className="text-urgent"> *</span>}</span>
           <select
             name="department_id"
             required={referencesLoaded && departments.length > 0}
             disabled={!referencesLoaded && !referenceError}
-            className="rounded-md border border-slate-200 px-3 py-2 text-sm focus-ring"
+            className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
           >
             <option value="">{referencesLoaded ? "Select department" : "Loading departments..."}</option>
             {departments.map((department) => (
@@ -189,15 +191,16 @@ export function TicketForm() {
             ))}
           </select>
         </label>
-        <label className="grid gap-2">
-          <span className="text-sm font-semibold text-slate-700">Related project{projects.length > 0 && <span className="text-urgent"> *</span>}</span>
+        <label className="grid min-w-0 gap-2">
+          <span className="text-sm font-semibold text-slate-700">Related project</span>
           <select
             name="project_id"
-            required={referencesLoaded && projects.length > 0}
+            value={selectedProject}
+            onChange={(event) => setSelectedProject(event.target.value)}
             disabled={!referencesLoaded && !referenceError}
-            className="rounded-md border border-slate-200 px-3 py-2 text-sm focus-ring"
+            className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
           >
-            <option value="">{referencesLoaded ? "Select project" : "Loading projects..."}</option>
+            <option value="">{referencesLoaded ? "No project" : "Loading projects..."}</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.project_code ? `${project.project_code} - ` : ""}
@@ -206,7 +209,34 @@ export function TicketForm() {
             ))}
           </select>
         </label>
+        <label className="grid min-w-0 gap-2">
+          <span className="text-sm font-semibold text-slate-700">Request type</span>
+          <select
+            name="request_type"
+            value={requestType}
+            onChange={(event) => setRequestType(event.target.value as RequestType)}
+            className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
+          >
+            <option value="general">General request</option>
+            <option value="access_request">Access request</option>
+            <option value="incident_report">Incident report</option>
+          </select>
+        </label>
       </div>
+
+      <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+        <input
+          type="checkbox"
+          name="is_confidential"
+          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent"
+        />
+        <span>
+          <span className="block text-sm font-semibold text-slate-800">Confidential ticket</span>
+          <span className="mt-0.5 block text-xs leading-5 text-slate-600">
+            Visible only to you, assigned staff, administrators, and any project approver who must review it.
+          </span>
+        </span>
+      </label>
 
       <fieldset className="grid gap-2">
         <legend className="text-sm font-semibold text-slate-700">Discipline / support group</legend>
@@ -243,13 +273,13 @@ export function TicketForm() {
         </div>
       </fieldset>
 
-      <div className="grid gap-4 md:grid-cols-[1fr_auto]">
-        <label className="grid gap-2">
+      <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+        <label className="grid min-w-0 gap-2">
           <span className="text-sm font-semibold text-slate-700">Request category</span>
           <select
             name="category_id"
             disabled={!referencesLoaded && !referenceError}
-            className="rounded-md border border-slate-200 px-3 py-2 text-sm focus-ring"
+            className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
           >
             <option value="">{referencesLoaded ? "General request" : "Loading categories..."}</option>
             {categories.map((category) => (
@@ -285,15 +315,26 @@ export function TicketForm() {
         </p>
       )}
       <label className="grid gap-2">
-        <span className="text-sm font-semibold text-slate-700">Description of concern or request <span className="text-urgent">*</span></span>
+        <span className="text-sm font-semibold text-slate-700">Description <span className="text-urgent">*</span></span>
         <textarea
           name="description"
           required
           rows={5}
-          className="rounded-md border border-slate-200 px-3 py-2 text-sm focus-ring"
-          placeholder="Describe the project, drawing/document reference, deadline, and expected output."
+          className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm focus-ring"
+          placeholder={
+            requestType === "access_request"
+              ? "Describe the system, project, or files you need access to and why."
+              : requestType === "incident_report"
+                ? "Describe what happened, when it happened, and who or what was affected."
+                : "Describe the project, drawing/document reference, deadline, and expected output."
+          }
         />
       </label>
+      {selectedProject && (
+        <p className="text-sm text-amber-800">
+          Project-linked requests require approval from the project PM or a designated project approver before work can be routed.
+        </p>
+      )}
 
       <div className="grid gap-2">
         <span className="text-sm font-semibold text-slate-700">Supporting attachments</span>
@@ -326,7 +367,7 @@ export function TicketForm() {
             }
           }}
           onDrop={handleDrop}
-          className={`grid min-h-24 cursor-pointer place-items-center rounded-md border border-dashed px-4 py-4 text-center transition-colors duration-100 motion-reduce:transition-none ${
+          className={`grid min-h-28 cursor-pointer place-items-center rounded-xl border border-dashed px-4 py-5 text-center transition-colors duration-100 motion-reduce:transition-none ${
             isDragging ? "border-accent bg-blue-50" : "border-slate-300 bg-slate-50 hover:bg-blue-50"
           }`}
         >
@@ -397,11 +438,11 @@ export function TicketForm() {
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
         <Button type="submit" disabled={isSubmitting || Boolean(createdTicketId)} className="sm:w-fit">
           <Send className="h-4 w-4" />
-          {isSubmitting ? "Submitting..." : "Submit ticket"}
+          {isSubmitting ? "Opening ticket..." : "Open ticket"}
         </Button>
         <Link
           href="/tickets"
-          className="focus-ring inline-flex min-h-10 items-center justify-center rounded-md border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          className="focus-ring inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           Cancel
         </Link>

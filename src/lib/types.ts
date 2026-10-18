@@ -20,6 +20,18 @@ export type Priority = "low" | "medium" | "high" | "urgent";
 
 export type ProjectStatus = "planned" | "ongoing" | "completed";
 
+export type RequestType = "general" | "access_request" | "incident_report";
+export type ApprovalStatus = "not_required" | "pending" | "approved" | "rejected";
+
+export type FaqEntry = {
+  id: number;
+  question: string;
+  answer: string;
+  display_order: number;
+  is_published: boolean;
+  updated_at?: string;
+};
+
 export type Department = {
   id: string | number;
   name: string;
@@ -31,6 +43,8 @@ export type Project = {
   name: string;
   location?: string | null;
   status: ProjectStatus;
+  pm_user_id?: string | null;
+  approver_ids?: string[];
 };
 
 export type Profile = {
@@ -56,6 +70,12 @@ export type Ticket = {
   description?: string | null;
   status: TicketStatus | string;
   priority: Priority | string;
+  is_confidential?: boolean;
+  request_type?: RequestType;
+  approval_status?: ApprovalStatus;
+  approval_comment?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
   requester_id?: string | null;
   assigned_to?: string | null;
   department_id?: string | number | null;
@@ -82,6 +102,37 @@ export type Comment = {
   is_internal?: boolean | null;
   created_at?: string | null;
 };
+
+export type TicketEvent = {
+  id: string | number;
+  ticket_id: string | number;
+  actor_id?: string | null;
+  event_type: string;
+  from_status?: string | null;
+  to_status?: string | null;
+  note?: string | null;
+  created_at?: string | null;
+};
+
+export type TicketActivity =
+  | {
+      kind: "comment";
+      id: string | number;
+      created_at?: string | null;
+      actor: ProfileSummary | null;
+      body: string;
+      is_internal?: boolean | null;
+    }
+  | {
+      kind: "event";
+      id: string | number;
+      created_at?: string | null;
+      actor: ProfileSummary | null;
+      event_type: string;
+      from_status?: string | null;
+      to_status?: string | null;
+      note?: string | null;
+    };
 
 export type TicketAttachment = {
   id: string | number;
