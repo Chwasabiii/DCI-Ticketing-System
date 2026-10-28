@@ -7,6 +7,7 @@ import { TicketActivityTimeline } from "@/components/tickets/ticket-activity-tim
 import { TicketHandoffForm } from "@/components/tickets/ticket-handoff-form";
 import { ProjectApprovalActions } from "@/components/tickets/project-approval-actions";
 import { RelatedTickets } from "@/components/tickets/related-tickets";
+import { TicketSatisfactionSurvey } from "@/components/tickets/ticket-satisfaction-survey";
 import { Badge } from "@/components/ui/badge";
 import {
   getCurrentContext,
@@ -14,6 +15,7 @@ import {
   getAssignableEmployees,
   getTicketAttachments,
   getTicket,
+  getTicketFeedback,
   getTicketActivity,
   getRelatedTickets,
   getProfileSummary,
@@ -63,7 +65,7 @@ export default async function TicketDetailPage({
       : Promise.resolve(false)
   );
 
-  const [ticket, people, activity, attachments, relatedTickets, context, routeOptions, canApprove] = await Promise.all([
+  const [ticket, people, activity, attachments, relatedTickets, context, routeOptions, canApprove, feedback] = await Promise.all([
     ticketPromise,
     peoplePromise,
     getTicketActivity(id),
@@ -71,7 +73,8 @@ export default async function TicketDetailPage({
     getRelatedTickets(id),
     contextPromise,
     routeOptionsPromise,
-    approvalAccessPromise
+    approvalAccessPromise,
+    getTicketFeedback(id)
   ]);
 
   if (!ticket || !context.profile) notFound();
@@ -194,6 +197,9 @@ export default async function TicketDetailPage({
           ticketId={String(ticket.id)}
           initialActivity={activity}
         />
+        {context.profile.user_side === "client" && ticket.requester_id === context.profile.id && ["resolved", "closed"].includes(ticket.status) && (
+          <TicketSatisfactionSurvey ticketId={String(ticket.id)} feedback={feedback} />
+        )}
       </section>
       <TicketActions
         key={`${ticket.id}-${ticket.updated_at ?? ""}`}

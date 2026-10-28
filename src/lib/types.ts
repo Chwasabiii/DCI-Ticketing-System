@@ -121,6 +121,15 @@ export type TicketSlaPolicy = {
   updated_at?: string;
 };
 
+export type TicketFeedback = {
+  id: string | number;
+  ticket_id: string | number;
+  requester_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+};
+
 export type SimilarTicket = Pick<Ticket, "id" | "ticket_no" | "title" | "status"> & {
   project_name: string | null;
   relevance: number;

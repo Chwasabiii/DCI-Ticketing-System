@@ -897,6 +897,53 @@ export async function addComment(formData: FormData) {
   return { comment };
 }
 
+export async function submitTicketFeedback(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to rate this support experience." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if ("error" in actor) return actor;
+  if (actor.profile.user_side !== "client") {
+    return { error: "Only the ticket requester can submit feedback." };
+  }
+
+  const ticketId = value(formData, "ticket_id");
+  const rawRating = value(formData, "rating");
+  const comment = value(formData, "comment");
+  const rating = rawRating && /^[1-5]$/.test(rawRating) ? Number(rawRating) : null;
+  if (!ticketId || !/^\d+$/.test(ticketId) || !Number.isSafeInteger(Number(ticketId)) || !rating) {
+    return { error: "Choose a rating from 1 to 5." };
+  }
+  if (comment && comment.length > 1000) {
+    return { error: "Feedback must be 1,000 characters or fewer." };
+  }
+
+  const { data: ticket, error: ticketError } = await supabase
+    .from("tickets")
+    .select("id, status")
+    .eq("id", ticketId)
+    .eq("requester_id", user.id)
+    .in("status", ["resolved", "closed"])
+    .maybeSingle();
+  if (ticketError) return { error: ticketError.message };
+  if (!ticket) return { error: "Only your own resolved ticket can be rated." };
+
+  const { error } = await supabase.from("ticket_feedback").insert({
+    ticket_id: Number(ticketId),
+    requester_id: user.id,
+    rating,
+    comment
+  });
+  if (error) {
+    if (error.code === "23505") return { error: "Feedback has already been submitted for this ticket." };
+    return { error: `Feedback could not be submitted: ${error.message}` };
+  }
+
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath("/reports");
+  return { success: "Thank you. Your feedback has been submitted." };
+}
+
 export async function updateTicketStatus(formData: FormData) {
   const supabase = await createClient();
   const {

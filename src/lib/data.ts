@@ -15,6 +15,7 @@ import type {
   TicketActivity,
   TicketEvent,
   Ticket,
+  TicketFeedback,
   TicketSlaPolicy,
   UserRole
 } from "@/lib/types";
@@ -170,6 +171,17 @@ export async function getTicket(id: string) {
     .eq("id", id)
     .single<Ticket>();
 
+  return data;
+}
+
+export async function getTicketFeedback(ticketId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("ticket_feedback")
+    .select("id, ticket_id, requester_id, rating, comment, created_at")
+    .eq("ticket_id", ticketId)
+    .maybeSingle<TicketFeedback>();
+  if (error) throw new Error(`Could not load ticket feedback: ${error.message}`);
   return data;
 }
 

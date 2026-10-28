@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, BookOpen, MessageCircleQuestion } from "lucide-react";
 import { FaqList } from "@/components/help/faq-list";
+import { FaqAssistant } from "@/components/help/faq-assistant";
 import { createClient } from "@/lib/supabase/server";
 import type { FaqEntry } from "@/lib/types";
 
@@ -28,6 +29,7 @@ export default async function FaqsPage() {
         </p>
       </header>
 
+      <FaqAssistant />
       <FaqList entries={data} />
 
       <section className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-blue-100 bg-blue-50/70 p-5 sm:flex-row sm:items-center sm:p-6">
