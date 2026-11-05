@@ -10,13 +10,12 @@ function csvCell(value: unknown) {
 }
 
 function exportTickets(tickets: Ticket[]) {
-  const columns = ["Ticket", "Title", "Status", "Priority", "Project", "Created", "Due date", "Resolved"];
+  const columns = ["Ticket", "Title", "Status", "Priority", "Created", "Due date", "Resolved"];
   const rows = tickets.map((ticket) => [
     ticket.ticket_no ?? ticket.id,
     ticket.title,
     ticket.status,
     ticket.priority,
-    ticket.project?.name ?? "No project",
     ticket.created_at,
     ticket.due_date,
     ticket.resolved_at
@@ -56,11 +55,8 @@ function Distribution({ title, values }: { title: string; values: Array<[string,
 
 export function TicketReports({ tickets, canExport }: { tickets: Ticket[]; canExport: boolean }) {
   const statuses = new Map<string, number>();
-  const projects = new Map<string, number>();
   for (const ticket of tickets) {
     statuses.set(ticket.status, (statuses.get(ticket.status) ?? 0) + 1);
-    const projectName = ticket.project?.name ?? "No project";
-    projects.set(projectName, (projects.get(projectName) ?? 0) + 1);
   }
   const resolvedDurations = tickets
     .filter((ticket) => ticket.created_at && ticket.resolved_at)
@@ -91,10 +87,7 @@ export function TicketReports({ tickets, canExport }: { tickets: Ticket[]; canEx
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Average resolution</p><p className="mt-2 text-3xl font-bold text-navy">{avgDays === null ? "—" : `${avgDays.toFixed(1)} days`}</p><p className="mt-1 text-xs text-slate-500">{resolvedDurations.length} resolved tickets with timestamps</p></div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Total tickets</p><p className="mt-2 text-3xl font-bold text-navy">{tickets.length}</p></div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Distribution title="status" values={sortCounts(statuses)} />
-        <Distribution title="project" values={sortCounts(projects)} />
-      </div>
+      <Distribution title="status" values={sortCounts(statuses)} />
     </section>
   );
 }

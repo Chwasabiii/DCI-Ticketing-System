@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { routeTicket, updateTicketStatus } from "@/lib/actions";
-import type { Discipline, EmployeeRole, Profile, Ticket, TicketStatus } from "@/lib/types";
+import type { EmployeeRole, Profile, Ticket, TicketStatus } from "@/lib/types";
 
 const ticketStatuses: TicketStatus[] = [
   "open",
@@ -24,13 +24,11 @@ export function TicketActions({
   ticket,
   profile,
   roles,
-  disciplines,
   people
 }: {
   ticket: Ticket;
   profile: Profile;
   roles: EmployeeRole[];
-  disciplines: Discipline[];
   people: Profile[];
 }) {
   const router = useRouter();
@@ -43,15 +41,11 @@ export function TicketActions({
   const [statusFailed, setStatusFailed] = useState(false);
   const canRoute =
     profile.user_side === "admin" ||
-    roles.includes("Coordinator") ||
-    roles.includes("Discipline Lead");
+    roles.includes("Coordinator");
   const canResolve =
     profile.user_side === "admin" ||
-    roles.includes("Personnel") ||
-    roles.includes("Discipline Lead");
+    roles.includes("Personnel");
   const isClient = profile.user_side === "client";
-  const approvalBlocksWork =
-    ticket.approval_status === "pending" || ticket.approval_status === "rejected";
   const editableStatuses = canResolve
     ? ticketStatuses
     : ticketStatuses.filter((status) => !["resolved", "closed", "rejected"].includes(status));
@@ -127,32 +121,12 @@ export function TicketActions({
           <Badge value={ticket.status} />
         </div>
         <div className="grid gap-3">
-          {approvalBlocksWork && (
-            <p className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
-              {ticket.approval_status === "pending"
-                ? "Routing and work are paused until a project approver approves this request."
-                : "This request was rejected by a project approver and cannot be routed."}
-            </p>
-          )}
-          {canRoute && !approvalBlocksWork && (
+          {canRoute && (
             <form onSubmit={handleRoute} className="grid gap-3 border-b border-slate-100 pb-4">
               <p className="text-xs leading-5 text-slate-600">
-                Review the request, choose its support group and priority, then assign an active employee.
+                Review the request, set its priority, and assign an active employee.
               </p>
               <input type="hidden" name="ticket_id" value={ticket.id} />
-              <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-                Support group
-                <select
-                  name="discipline_id"
-                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
-                  defaultValue={ticket.discipline_id ?? ""}
-                >
-                  <option value="">Unassigned</option>
-                  {disciplines.map((discipline) => (
-                    <option key={discipline.id} value={discipline.id}>{discipline.name}</option>
-                  ))}
-                </select>
-              </label>
               <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
                 Assign to
                 <select
@@ -196,11 +170,11 @@ export function TicketActions({
               )}
               <Button type="submit" variant="secondary" loading={routing}>
                 <Route className="h-4 w-4" />
-                {routing ? "Saving..." : "Save routing"}
+                {routing ? "Saving..." : "Save assignment"}
               </Button>
             </form>
           )}
-          {(canRoute || canResolve) && !approvalBlocksWork && (
+          {(canRoute || canResolve) && (
             <form onSubmit={handleStatusUpdate} className="grid gap-3">
               <input type="hidden" name="ticket_id" value={ticket.id} />
               <label className="grid gap-1.5 text-xs font-semibold text-slate-700">

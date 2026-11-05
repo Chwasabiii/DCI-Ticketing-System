@@ -1,8 +1,15 @@
 export type UserSide = "client" | "employee" | "admin";
 
+export type ServiceTeam = {
+  id: number;
+  name: string;
+  slug: string;
+  is_in_scope: boolean;
+  is_active: boolean;
+};
+
 export type EmployeeRole =
   | "Coordinator"
-  | "Discipline Lead"
   | "Personnel"
   | "Manager";
 
@@ -18,33 +25,16 @@ export type TicketStatus =
 
 export type Priority = "low" | "medium" | "high" | "urgent";
 
-export type ProjectStatus = "planned" | "ongoing" | "completed";
-
 export type RequestType = "general" | "access_request" | "incident_report";
-export type ApprovalStatus = "not_required" | "pending" | "approved" | "rejected";
 
 export type FaqEntry = {
   id: number;
+  service_team_id?: number | null;
   question: string;
   answer: string;
   display_order: number;
   is_published: boolean;
   updated_at?: string;
-};
-
-export type Department = {
-  id: string | number;
-  name: string;
-};
-
-export type Project = {
-  id: string | number;
-  project_code?: string | null;
-  name: string;
-  location?: string | null;
-  status: ProjectStatus;
-  pm_user_id?: string | null;
-  approver_ids?: string[];
 };
 
 export type Profile = {
@@ -53,8 +43,8 @@ export type Profile = {
   email: string | null;
   user_side: UserSide;
   status: string | null;
-  department_id?: string | null;
-  discipline_id?: string | null;
+  service_team_id?: number | null;
+  service_team?: Pick<ServiceTeam, "id" | "name" | "slug"> | null;
 };
 
 export type ManagedProfile = Profile & {
@@ -73,7 +63,7 @@ export type Notification = {
 };
 
 export type NotificationPreference = {
-  notification_type: "ticket_submitted" | "ticket_assigned" | "ticket_approved" | "ticket_rejected" | "ticket_updated";
+  notification_type: "ticket_submitted" | "ticket_assigned" | "ticket_updated";
   enabled: boolean;
 };
 
@@ -92,16 +82,9 @@ export type Ticket = {
   priority: Priority | string;
   is_confidential?: boolean;
   request_type?: RequestType;
-  approval_status?: ApprovalStatus;
-  approval_comment?: string | null;
-  reviewed_by?: string | null;
-  reviewed_at?: string | null;
   requester_id?: string | null;
   assigned_to?: string | null;
-  department_id?: string | number | null;
-  project_id?: string | number | null;
-  discipline_id?: string | number | null;
-  category_id?: string | number | null;
+  service_team_id?: number | null;
   resolution_notes?: string | null;
   due_date?: string | null;
   created_at?: string | null;
@@ -110,8 +93,6 @@ export type Ticket = {
   updated_at?: string | null;
   requester?: ProfileSummary | null;
   assignee?: ProfileSummary | null;
-  department?: { name: string } | null;
-  project?: { name: string } | null;
 };
 
 export type TicketSlaPolicy = {
@@ -131,25 +112,10 @@ export type TicketFeedback = {
 };
 
 export type SimilarTicket = Pick<Ticket, "id" | "ticket_no" | "title" | "status"> & {
-  project_name: string | null;
   relevance: number;
 };
 
-export type RelatedTicket = Pick<Ticket, "id" | "ticket_no" | "title" | "status" | "priority"> & {
-  project?: { name: string } | null;
-};
-
-export type TicketRoutingRule = {
-  id: number;
-  name: string;
-  project_id: number | null;
-  category_id: number | null;
-  request_type: RequestType | null;
-  discipline_id: number | null;
-  assigned_to: string | null;
-  rule_priority: number;
-  is_active: boolean;
-};
+export type RelatedTicket = Pick<Ticket, "id" | "ticket_no" | "title" | "status" | "priority">;
 
 export type ProfileSummary = Pick<Profile, "id" | "full_name" | "email"> & {
   user_side?: UserSide;
@@ -203,17 +169,4 @@ export type TicketAttachment = {
   file_path: string;
   created_at?: string | null;
   signed_url?: string | null;
-};
-
-export type Discipline = {
-  id: string | number;
-  name: string;
-  lead_user_id?: string | null;
-  status?: string;
-};
-
-export type Category = {
-  id: string | number;
-  name: string;
-  discipline_id?: string | number | null;
 };

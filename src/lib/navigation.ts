@@ -34,14 +34,17 @@ export function isNavItemActive(pathname: string, href: string): boolean {
 
 export function getNavItems(
   userSide?: UserSide,
-  roles: EmployeeRole[] = []
+  roles: EmployeeRole[] = [],
+  serviceTeamSlug?: string | null
 ): NavItem[] {
   if (userSide === "client") {
     return [
+      { label: "IT Support", href: "/it-support", icon: "inbox" },
+      { label: "Cost Control Group", href: "/cost-control", icon: "clipboard" },
       { label: "Dashboard", href: "/dashboard", icon: "home" },
+      { label: "Open a Ticket", href: "/tickets/new", icon: "plus" },
       { label: "My Tickets", href: "/tickets", icon: "clipboard" },
       { label: "FAQs", href: "/faqs", icon: "clipboard" },
-      { label: "Open a Ticket", href: "/tickets/new", icon: "plus" }
     ];
   }
 
@@ -51,31 +54,26 @@ export function getNavItems(
       { label: "Triage Inbox", href: "/inbox", icon: "inbox" },
       { label: "FAQs", href: "/faqs", icon: "clipboard" },
       { label: "All Tickets", href: "/tickets", icon: "clipboard" },
-      { label: "Routing Rules", href: "/admin/routing", icon: "workflow" },
       { label: "SLA Targets", href: "/admin/sla", icon: "clock" },
       { label: "Users", href: "/admin/users", icon: "users" },
       { label: "Manage FAQs", href: "/admin/faqs", icon: "clipboard" },
-      { label: "Projects", href: "/admin/projects", icon: "clipboard" },
-      { label: "Departments", href: "/admin/departments", icon: "workflow" },
-      { label: "Disciplines", href: "/admin/disciplines", icon: "shield" },
-      { label: "Categories", href: "/admin/categories", icon: "clipboard" }
     ];
   }
 
   const items: NavItem[] = [
-    { label: "Dashboard", href: "/dashboard", icon: "home" },
+    { label: serviceTeamSlug === "cost-control" ? "CCG Dashboard" : "IT Support Dashboard", href: "/dashboard", icon: "home" },
     { label: "Triage Inbox", href: "/inbox", icon: "inbox" },
-    { label: "FAQs", href: "/faqs", icon: "clipboard" },
-    { label: "Open a Ticket", href: "/tickets/new", icon: "plus" }
+    { label: "FAQs", href: "/faqs", icon: "clipboard" }
   ];
 
-  if (roles.includes("Discipline Lead")) {
-    items.push({ label: "Discipline Tickets", href: "/discipline", icon: "workflow" });
-    items.push({ label: "Workload", href: "/workload", icon: "bar-chart" });
-  }
+  if (roles.includes("Coordinator")) items.push({ label: "Workload", href: "/workload", icon: "bar-chart" });
 
   if (roles.includes("Manager")) {
     items.push({ label: "Reports", href: "/reports", icon: "file-chart" });
+  }
+
+  if (serviceTeamSlug === "it-support" || serviceTeamSlug === "cost-control") {
+    items.push({ label: "Manage FAQs", href: "/admin/faqs", icon: "clipboard" });
   }
 
   return items;

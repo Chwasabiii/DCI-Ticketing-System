@@ -1,8 +1,16 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowRight, CheckCircle2, CircleHelp, LockKeyhole, TicketPlus } from "lucide-react";
 import { TicketForm } from "@/components/tickets/ticket-form";
+import { getCurrentContext } from "@/lib/data";
 
-export default function NewTicketPage() {
+export default async function NewTicketPage({ searchParams }: { searchParams: Promise<{ team?: string }> }) {
+  const { profile } = await getCurrentContext();
+  if (!profile) redirect("/login");
+  if (profile.user_side !== "client") redirect("/dashboard");
+
+  const { team } = await searchParams;
+  const teamSlug = team === "it-support" ? team : "it-support";
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
       <header className="rounded-2xl bg-gradient-to-r from-[#172b4d] to-[#294c81] px-6 py-6 text-white shadow-[0_14px_36px_rgba(18,33,58,0.15)] sm:px-8">
@@ -10,13 +18,13 @@ export default function NewTicketPage() {
           <TicketPlus className="h-4 w-4" />
           PMSG Support
         </div>
-        <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Open a ticket</h1>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">IT Support request</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100/90 sm:text-base">
           Tell us what you need. Our support team will review your request and keep you updated.
         </p>
       </header>
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <TicketForm />
+        <TicketForm teamSlug={teamSlug} />
         <aside className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
           <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
             <h2 className="font-bold text-navy">A few tips</h2>
@@ -30,7 +38,7 @@ export default function NewTicketPage() {
               <li className="flex gap-3">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-resolved" />
                 <span className="text-sm leading-5 text-slate-600">
-                  Include dates, project details, and document references.
+                  Include dates, system details, and document references.
                 </span>
               </li>
               <li className="flex gap-3">

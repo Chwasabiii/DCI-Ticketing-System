@@ -5,13 +5,11 @@ import { TicketActions } from "@/components/tickets/ticket-actions";
 import { AttachmentUploader } from "@/components/tickets/attachment-uploader";
 import { TicketActivityTimeline } from "@/components/tickets/ticket-activity-timeline";
 import { TicketHandoffForm } from "@/components/tickets/ticket-handoff-form";
-import { ProjectApprovalActions } from "@/components/tickets/project-approval-actions";
 import { RelatedTickets } from "@/components/tickets/related-tickets";
 import { TicketSatisfactionSurvey } from "@/components/tickets/ticket-satisfaction-survey";
 import { Badge } from "@/components/ui/badge";
 import {
   getCurrentContext,
-  getDisciplines,
   getAssignableEmployees,
   getTicketAttachments,
   getTicket,
@@ -19,7 +17,6 @@ import {
   getTicketActivity,
   getRelatedTickets,
   getProfileSummary,
-  canApproveTicket
 } from "@/lib/data";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
@@ -32,23 +29,19 @@ export default async function TicketDetailPage({
   if (!/^\d+$/.test(id)) notFound();
 
   const contextPromise = getCurrentContext();
-  const routeOptionsPromise = contextPromise.then(async ({ profile, roleNames }) => {
+  const ticketPromise = getTicket(id);
+  const routeOptionsPromise = Promise.all([contextPromise, ticketPromise]).then(async ([{ profile, roleNames }, ticket]) => {
     const canRoute =
       profile?.user_side === "admin" ||
-      roleNames.includes("Coordinator") ||
-      roleNames.includes("Discipline Lead");
+      roleNames.includes("Coordinator");
 
-    if (!canRoute) return { disciplines: [], people: [] };
+    if (!canRoute || !ticket) return { people: [] };
 
-    const [disciplines, people] = await Promise.all([
-      getDisciplines(),
-      getAssignableEmployees()
-    ]);
+    const people = await getAssignableEmployees(ticket.service_team_id);
 
-    return { disciplines, people };
+    return { people };
   });
 
-  const ticketPromise = getTicket(id);
   const peoplePromise = ticketPromise.then(async (ticket) => {
     if (!ticket) return { requester: null, assignee: null };
 
@@ -59,13 +52,7 @@ export default async function TicketDetailPage({
 
     return { requester, assignee };
   });
-  const approvalAccessPromise = ticketPromise.then((ticket) =>
-    ticket?.approval_status === "pending"
-      ? canApproveTicket(id)
-      : Promise.resolve(false)
-  );
-
-  const [ticket, people, activity, attachments, relatedTickets, context, routeOptions, canApprove, feedback] = await Promise.all([
+  const [ticket, people, activity, attachments, relatedTickets, context, routeOptions, feedback] = await Promise.all([
     ticketPromise,
     peoplePromise,
     getTicketActivity(id),
@@ -73,14 +60,13 @@ export default async function TicketDetailPage({
     getRelatedTickets(id),
     contextPromise,
     routeOptionsPromise,
-    approvalAccessPromise,
     getTicketFeedback(id)
   ]);
 
   if (!ticket || !context.profile) notFound();
 
   const showHandoff =
-    (context.profile.user_side === "admin" || context.roleNames.some((role) => ["Coordinator", "Discipline Lead"].includes(role))) &&
+    (context.profile.user_side === "admin" || context.roleNames.includes("Coordinator")) &&
     !["resolved", "closed", "rejected"].includes(ticket.status);
 
   return (
@@ -123,9 +109,6 @@ export default async function TicketDetailPage({
             {[
               ["Created", formatDateTime(ticket.created_at)],
               ["Requested by", people.requester?.full_name ?? people.requester?.email ?? "Not available"],
-              ["Department", ticket.department?.name ?? "Not specified"],
-              ["Project", ticket.project?.name ?? "Not specified"],
-              ["Project approval", ticket.approval_status === "not_required" ? "Not required" : ticket.approval_status ?? "Not set"],
               ["Due date", formatDate(ticket.due_date)],
               ["Assigned to", people.assignee?.full_name ?? people.assignee?.email ?? "Unassigned"]
             ].map(([label, value]) => (
@@ -144,22 +127,6 @@ export default async function TicketDetailPage({
               {ticket.description}
             </p>
           </div>
-          {ticket.approval_status === "rejected" && ticket.approval_comment && (
-            <p className="mt-4 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">
-              <span className="font-semibold">Reason for rejection:</span>{" "}
-              {ticket.approval_comment}
-            </p>
-          )}
-          {ticket.approval_status === "pending" && !canApprove && (
-            <p className="mt-4 rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
-              This project-linked request is waiting for approval from its PM or a designated project approver.
-            </p>
-          )}
-          {canApprove && ticket.approval_status === "pending" && (
-            <div className="mt-4">
-              <ProjectApprovalActions ticketId={String(ticket.id)} />
-            </div>
-          )}
         </div>
         </div>
 
@@ -221,7 +188,6 @@ export default async function TicketDetailPage({
               ticket={ticket}
               profile={context.profile}
               roles={context.roleNames}
-              disciplines={routeOptions.disciplines}
               people={routeOptions.people}
             />
           )}

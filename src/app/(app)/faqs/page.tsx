@@ -25,7 +25,7 @@ export default async function FaqsPage() {
         </div>
         <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">How can we help?</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100/90 sm:text-base">
-          Search quick answers about requests, project approvals, and getting support.
+          Search quick answers about submitting requests and getting support.
         </p>
       </header>
 

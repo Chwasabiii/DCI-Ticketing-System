@@ -1,6 +1,6 @@
 # PMSG Desk
 
-PMSG Desk is a ticket-tracking prototype for Design Coordinates, Inc. It is intended to help the Project Management Support Group (PMSG) receive, route, assign, and monitor support requests across Architectural, Structural, Mechanical, Electrical, Cost Control, Documents, IT Services, and Other Support Services.
+PMSG Desk is a ticket-tracking prototype for Design Coordinates, Inc. It supports three account types: end users, service providers, and administrators. Service providers belong to a team. The initial team directory includes IT Support Department and Cost Control Group as the active focus, plus Architectural, Structural, Mechanical, Electrical, Documents, and Other Support Services for future expansion.
 
 This repository contains the web application and a draft Supabase database schema. It is a capstone starting point, not a finished production system. The role rules and workflow in the schema are proposals that should be confirmed with DCI before real use.
 
@@ -8,8 +8,8 @@ This repository contains the web application and a draft Supabase database schem
 
 The intended ticket workflow is:
 
-1. A client signs in and submits a request with a title, details, and optional discipline/category.
-2. A coordinator reviews incoming requests, chooses priority, routes the request, and assigns a staff member.
+1. A client signs in and submits a request with a title, details, and request type.
+2. A coordinator reviews incoming requests, chooses priority, and assigns a staff member.
 3. Staff work on the request and add comments or internal notes.
 4. Staff mark the work resolved; the client can confirm completion and close the ticket.
 5. Managers monitor open, urgent, resolved, and overdue work.
@@ -19,8 +19,8 @@ The application has pages and initial behavior for much of this flow. Some secti
 ## User Types
 
 - **Client:** Submit tickets, view their requests, comment, and confirm a resolved request.
-- **Employee:** Staff access is further divided into Coordinator, Discipline Lead, Personnel, and Manager roles. These roles influence navigation and available ticket actions.
-- **Admin:** Invite users and manage the projects available when clients and employees submit support requests.
+- **Employee:** Staff access is divided into Coordinator, Personnel, and Manager roles. These roles influence navigation and available ticket actions.
+- **Admin:** Invite and manage users, FAQs, and SLA targets.
 
 The database policies also control which records can be read or changed. UI visibility is not a substitute for database authorization; review and test both before deployment.
 
@@ -30,21 +30,18 @@ Implemented in the current prototype:
 
 - Supabase email/password sign-in and session-aware pages.
 - Client ticket submission and ticket list/detail pages.
-- Basic routing, assignment, priority, status changes, comments, and internal notes.
-- Dashboard ticket counts, incoming queue, assigned/discipline views, overdue list, and a basic status report.
+- Assignment, priority, status changes, comments, and internal notes.
+- Dashboard ticket counts, incoming queue, assigned view, overdue list, and a basic status report.
 - Role-based navigation and initial row-level security policies in the SQL schema.
 
 Still incomplete or needing confirmation:
 
 - Notifications page is a placeholder; the schema has a notifications table, but the app does not yet populate and display notifications.
-- Admins can invite client and employee accounts by email and manage project names, codes, locations, and Planned/Ongoing/Completed statuses. Ticket submitters can select Planned and Ongoing projects.
-- Admins can assign a PM and project approvers. Project-linked tickets require one of them to approve or reject before PMSG can route or work them.
-- Ticket submission supports General, Access Request, and Incident Report request types, alongside the existing optional category selector. Ticket submitters can select Planned and Ongoing projects.
-- Requesters can mark tickets confidential. Confidential ticket data and files are restricted by database policies to the requester, administrators, assigned employees, and project approvers who need to review the request.
-- Signed-in users can read published FAQs; administrators create, edit, publish, and delete them. Ticket submitters can select Planned and Ongoing projects.
-- Department, discipline, and category management pages remain read-only tables.
+- Admins can invite client and employee accounts by email.
+- Ticket submission supports General, Access Request, and Incident Report request types.
+- Requesters can mark tickets confidential. Confidential ticket data and files are restricted by database policies to the requester, administrators, and assigned employees.
+- Signed-in users can read published FAQs; administrators create, edit, publish, and delete them.
 - Accounts with no sign-in for six months are marked inactive (not deleted); admins are excluded and can restore archived accounts.
-- The dashboard's discipline mix uses illustrative values rather than counts calculated from tickets.
 - Ticket file uploads are available from ticket submission and ticket details. Cost tables exist in the schema but are not wired into the user interface.
 - Ticket comments appear in real time for signed-in users who can view that ticket, once `ticket_comments` is enabled in the Supabase Realtime publication.
 - Reports are limited to ticket counts by status. Filtering, date ranges, exports, and business-specific metrics need requirements.
@@ -61,7 +58,7 @@ Still incomplete or needing confirmation:
 - **Row Level Security (RLS)** applies database access rules to signed-in users.
 - **Supabase Storage** keeps ticket attachments private; ticket-scoped policies and expiring download links control access.
 
-The ticket form's category, discipline, department, and project lookup response is cached privately in the browser for 60 seconds. Ticket, profile, and other user-specific records are not placed in a shared persistent cache.
+Legacy project, department, discipline, category, and routing tables remain in the database for historical records. The app no longer reads or manages them; the final removal migration disables automatic routing and project approval gates without deleting stored records.
 
 ## Folder Guide
 
@@ -95,22 +92,15 @@ In Next.js, a `page.tsx` file defines a page. For example, `src/app/(app)/ticket
 | `/tickets` | Browse tickets available to the signed-in user. |
 | `/tickets/new` | Submit a support request. |
 | `/tickets/[id]` | View a ticket, comments, and available actions. |
-| `/inbox` | Staff triage inbox for unassigned, assigned-to-me, approval, and overdue tickets. |
+| `/inbox` | Staff triage inbox for unassigned, assigned-to-me, and overdue tickets. |
 | `/queue` | Focused incoming-ticket queue. |
 | `/assigned` | Focused view of tickets assigned to staff. |
-| `/approvals` | Focused project-approval queue. |
-| `/discipline` | View discipline-related tickets. |
 | `/workload` | View workload information. |
 | `/overdue` | Focused overdue-ticket view. |
 | `/reports` | View basic counts by ticket status. |
 | `/notifications` | Placeholder for user notifications. |
 | `/settings` | View the signed-in user's account and roles. |
 | `/admin/users` | View user records. |
-| `/admin/routing` | Configure automatic ticket routing rules. |
-| `/admin/projects` | Add projects and update their status. |
-| `/admin/departments` | View department records. |
-| `/admin/disciplines` | View discipline records. |
-| `/admin/categories` | View category records. |
 
 The matching source file is under `src/app/`. For example, `/tickets/new` is implemented in `src/app/(app)/tickets/new/page.tsx`.
 
@@ -136,13 +126,16 @@ The matching source file is under `src/app/`. For example, `/tickets/new` is imp
    Run `supabase/migrations/20261020_ticket_activity_timeline.sql` to publish ticket audit events for live activity updates and record readable routing and assignment details.
    Run `supabase/migrations/20261021_repair_missing_profiles.sql` to create default client profiles for any existing Auth accounts that are missing one and ensure future accounts get a profile.
    Run `supabase/migrations/20261022_ticket_requester_read_policy.sql` to ensure requesters can read their own newly created ticket rows when the app uses `INSERT ... RETURNING`.
-   Run `supabase/migrations/20261023_ticket_notifications.sql` to create in-app notifications for ticket submissions, assignments, approvals, rejections, comments, and updates.
+   Run `supabase/migrations/20261023_ticket_notifications.sql` to create in-app notifications for ticket submissions, assignments, comments, and updates.
    Run `supabase/migrations/20261024_audit_details_and_notification_preferences.sql` to log changed ticket fields and enable per-user in-app notification preferences with duplicate-event protection.
    Run `supabase/migrations/20261025_security_basics.sql` to limit profile exposure, enforce ticket role checks, protect ticket participant lookups, and restrict private attachment uploads.
    Run `supabase/migrations/20261026_ticket_duplicate_detection_and_links.sql` to suggest similar visible open tickets and add staff-managed related-ticket links.
-   Run `supabase/migrations/20261027_automatic_ticket_routing.sql` to add admin-managed routing rules and apply them to new tickets after any required project approval.
+   Run `supabase/migrations/20261027_automatic_ticket_routing.sql` only when migrating an older database that needs its original schema history; the removal migration below disables this workflow.
    Run `supabase/migrations/20261028_inbox_productivity_features.sql` to add SLA targets and first-response tracking, plus the staff-only ticket handoff RPC. Saved inbox views are stored in each browser; bulk actions and onboarding tips need no database changes.
-   Run `supabase/migrations/20261029_sla_escalations.sql` to schedule in-app alerts to active Discipline Leads and Managers when a high or urgent ticket misses its first-response or resolution SLA. This requires `pg_cron` to be enabled in Supabase; alerts are deduplicated per ticket and SLA type.
+   Run `supabase/migrations/20261029_sla_escalations.sql` to schedule in-app alerts when a high or urgent ticket misses its first-response or resolution SLA. This requires `pg_cron` to be enabled in Supabase; alerts are deduplicated per ticket and SLA type.
+   Run `supabase/migrations/20261030_ticket_satisfaction_surveys.sql` to add requester satisfaction surveys after resolution.
+   Run `supabase/migrations/20261031_ticket_activity_author_sides.sql` to distinguish requester and staff authors in ticket activity.
+   After all existing migrations through `20261031`, run `supabase/migrations/20261105_remove_project_and_routing_workflows.sql` to disable project approvals and automatic routing while retaining existing database records. Then run `supabase/migrations/20261106_service_teams.sql` to add team assignment and scope tickets to their service team, followed by `20261107_end_users_only_ticket_creation.sql` to reserve ticket submission for end users and `20261108_team_faq_management.sql` to let IT Support and Cost Control Group providers manage their own team's FAQs.
 3. Create a test user in Supabase Authentication. The project currently has a sign-in page, not a public sign-up page.
 4. For the first administrator, update the new user's profile in the SQL Editor, replacing the email:
 
@@ -214,16 +207,16 @@ If the development site suddenly loses styling or reports missing `/_next` asset
 1. Confirm the ticket lifecycle, priority definitions, employee roles, and access rules with DCI.
 2. Verify RLS for client, employee, and admin accounts using separate test users.
 3. Finish the ticket experience: clear validation/errors, assignment and due-date handling, audit timeline, and any required reopen/reject paths.
-4. Build admin create/edit workflows and connect the dashboard discipline figures to real ticket data.
+4. Confirm which additional admin workflows and reporting metrics stakeholders need.
 5. Implement notifications and any cost/reporting features that stakeholders approve.
 6. Add tests for the main user journeys and authorization boundaries; verify the production build before deployment.
 
 ## Database and Security Notes
 
-- The schema is `supabase/schema.sql`; it includes sample departments, disciplines, projects, and employee roles.
+- The schema is `supabase/schema.sql`; it retains legacy reference tables for compatibility with existing data.
 - Browser and server clients use the Supabase anon key plus the signed-in session so database RLS remains active.
 - User invitations use a server-only service-role client and are restricted to active administrators. Disable public sign-ups in Supabase Auth.
-- Project-linked tickets require approval by the assigned PM or any designated project approver. Rejections require a reason. Projectless requests do not require approval.
+- Legacy project approval values and reference-table rows are retained for history, but the app no longer uses them after the removal migration is applied.
 - Confidential ticket access is enforced by Supabase row-level security and storage policies, not just by hiding tickets in the interface.
 - A daily Supabase Cron job marks non-admin profiles inactive after six months without a sign-in. Never-used accounts use their creation date; records are retained and RLS blocks archived users. Admins can restore them.
 - Never disable RLS to make a page appear to work. Fix the policy or the user's role and verify access with the intended account.

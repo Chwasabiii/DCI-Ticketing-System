@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { TicketReports } from "@/components/reports/ticket-reports";
+import { CostControlDashboard } from "@/components/tickets/cost-control-dashboard";
 import { getAllTickets, getCurrentContext } from "@/lib/data";
 import { isTicketOverdue } from "@/lib/utils";
 
@@ -58,11 +59,19 @@ export default async function DashboardPage() {
     getAllTickets()
   ]);
 
-  const active = tickets.filter(
+  if (profile?.user_side === "employee" && profile.service_team?.slug === "cost-control") {
+    return <CostControlDashboard tickets={tickets.filter((ticket) => ticket.service_team_id === profile.service_team_id)} name={profile.full_name} />;
+  }
+
+  const visibleTickets = profile?.user_side === "employee"
+    ? tickets.filter((ticket) => ticket.service_team_id === profile.service_team_id)
+    : tickets;
+
+  const active = visibleTickets.filter(
     (ticket) => !["resolved", "closed", "rejected"].includes(ticket.status)
   );
   const urgent = active.filter((ticket) => ticket.priority === "urgent").length;
-  const resolved = tickets.filter(
+  const resolved = visibleTickets.filter(
     (ticket) => ticket.status === "resolved" || ticket.status === "closed"
   ).length;
   const overdue = active.filter((ticket) => isTicketOverdue(ticket)).length;
@@ -80,13 +89,13 @@ export default async function DashboardPage() {
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-blue-100">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              {roleLabel}
+              {profile?.user_side === "employee" ? profile.service_team?.name ?? roleLabel : roleLabel}
             </div>
             <h1 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
               Welcome back{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-blue-100/85 sm:text-base">
-              Everything you need to request help and keep project support moving, all in one place.
+              Everything you need to request help and keep work moving, all in one place.
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -107,6 +116,17 @@ export default async function DashboardPage() {
           </div>
         </div>
       </section>
+
+      {profile?.user_side === "client" && (
+        <section aria-label="Choose a service team" className="grid gap-4 lg:grid-cols-2">
+          <Link href="/it-support" className="group flex items-center justify-between gap-4 rounded-2xl border border-blue-100 bg-white p-5 shadow-soft transition hover:border-blue-300 hover:shadow-lg sm:p-6">
+            <span className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-accent"><Ticket className="h-5 w-5" /></span><span><span className="block text-lg font-bold text-navy">IT Support Department</span><span className="mt-1 block text-sm text-slate-500">Get help with systems, devices, accounts, and access.</span></span></span><ArrowRight className="h-5 w-5 shrink-0 text-accent transition-transform group-hover:translate-x-1" />
+          </Link>
+          <Link href="/cost-control" className="group flex items-center justify-between gap-4 rounded-2xl border border-emerald-100 bg-white p-5 shadow-soft transition hover:border-emerald-300 hover:shadow-lg sm:p-6">
+            <span className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><Ticket className="h-5 w-5" /></span><span><span className="block text-lg font-bold text-navy">Cost Control Group</span><span className="mt-1 block text-sm text-slate-500">Open the dedicated CCG service tab.</span></span></span><ArrowRight className="h-5 w-5 shrink-0 text-emerald-700 transition-transform group-hover:translate-x-1" />
+          </Link>
+        </section>
+      )}
 
       <section aria-label="Ticket overview" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -144,7 +164,7 @@ export default async function DashboardPage() {
       </section>
 
       <TicketReports
-        tickets={tickets}
+        tickets={visibleTickets}
         canExport={profile?.user_side === "admin" && profile.status === "active"}
       />
 
@@ -159,7 +179,7 @@ export default async function DashboardPage() {
               View all <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
-          <TicketTable tickets={tickets.slice(0, 8)} />
+        <TicketTable tickets={visibleTickets.slice(0, 8)} />
         </div>
 
         <aside className="space-y-4">
@@ -174,7 +194,7 @@ export default async function DashboardPage() {
               </div>
             </div>
             <p className="mt-4 text-sm leading-6 text-slate-600">
-              Open a ticket for project support, report an incident, or ask for access.
+              Open a support request, report an incident, or ask for access.
             </p>
             <Link
               href="/tickets/new"

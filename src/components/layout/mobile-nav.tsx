@@ -36,7 +36,9 @@ const icons: Record<NavIcon, typeof Home> = {
 export function MobileNav({ items }: { items: NavItem[] }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
-  const primaryPaths = ["/dashboard", "/inbox", "/tickets/new", "/tickets"];
+  const primaryPaths = items.some((item) => item.href === "/it-support")
+    ? ["/it-support", "/cost-control", "/dashboard", "/tickets"]
+    : ["/dashboard", "/inbox", "/tickets/new", "/tickets"];
   const primary = primaryPaths.map((path) => items.find((item) => item.href === path)).filter((item): item is NavItem => Boolean(item)).slice(0, 4);
   const secondary = items.filter((item) => !primary.includes(item));
 

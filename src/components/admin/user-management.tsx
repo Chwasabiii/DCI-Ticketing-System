@@ -7,7 +7,7 @@ import { deactivateUser, reactivateUser, updateManagedUser } from "@/lib/actions
 import { Badge } from "@/components/ui/badge";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
-import type { EmployeeRole, ManagedProfile, UserSide } from "@/lib/types";
+import type { EmployeeRole, ManagedProfile, ServiceTeam, UserSide } from "@/lib/types";
 
 type RoleOption = { id: number; name: EmployeeRole };
 type ManagementResult = { success?: string; error?: string };
@@ -15,10 +15,12 @@ type ManagementResult = { success?: string; error?: string };
 export function UserManagement({
   users,
   roles,
+  teams,
   currentUserId
 }: {
   users: ManagedProfile[];
   roles: RoleOption[];
+  teams: ServiceTeam[];
   currentUserId: string;
 }) {
   const router = useRouter();
@@ -161,8 +163,8 @@ export function UserManagement({
               Account type
               <select value={sideFilter} onChange={(event) => { setSideFilter(event.target.value); setPage(1); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-800 transition-shadow focus-ring">
                 <option value="all">All types</option>
-                <option value="client">Client</option>
-                <option value="employee">Employee</option>
+                <option value="client">End user</option>
+                <option value="employee">Service provider</option>
                 <option value="admin">Admin</option>
               </select>
             </label>
@@ -175,7 +177,7 @@ export function UserManagement({
               </select>
             </label>
             <label className="grid gap-1 text-xs font-semibold text-slate-600">
-              Employee role
+              Service provider role
               <select value={roleFilter} onChange={(event) => { setRoleFilter(event.target.value); setPage(1); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-800 transition-shadow focus-ring">
                 <option value="all">All roles</option>
                 {roles.map((role) => <option key={role.id} value={role.name}>{role.name}</option>)}
@@ -198,7 +200,7 @@ export function UserManagement({
               <div className="min-w-0"><p className="truncate font-semibold text-navy">{user.full_name ?? "Name not set"}{isSelf && <span className="ml-2 text-xs font-normal text-slate-500">You</span>}</p><p className="truncate text-xs text-slate-500">{user.email ?? "No email"}</p></div>
               <Badge value={isActive ? "active" : "inactive"} />
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2"><Badge value={user.user_side} />{user.employee_roles.map((role) => <Badge key={role} value={role} className="normal-case tracking-normal" />)}{user.invitation_pending && <span className="text-xs font-medium text-amber-700">Invitation pending</span>}</div>
+            <div className="mt-3 flex flex-wrap items-center gap-2"><Badge value={accountTypeLabel(user.user_side)} />{user.service_team && <Badge value={user.service_team.name} className="normal-case tracking-normal" />}{user.employee_roles.map((role) => <Badge key={role} value={role} className="normal-case tracking-normal" />)}{user.invitation_pending && <span className="text-xs font-medium text-amber-700">Invitation pending</span>}</div>
             <div className="mt-4 flex gap-2 border-t border-slate-100 pt-3">
               {!isSelf && <button type="button" onClick={() => { setEditing(user); setError(null); setNotice(null); }} disabled={busyId === user.id} className="min-h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50">Edit account</button>}
               <button type="button" onClick={() => void handleStatus(user)} disabled={isSelf || busyId === user.id} className="min-h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50 disabled:opacity-50">{busyId === user.id ? <span className="inline-flex items-center gap-1.5"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Saving…</span> : isActive ? "Deactivate" : "Restore access"}</button>
@@ -214,7 +216,7 @@ export function UserManagement({
             <tr>
               <th className="px-4 py-3">Name / Email</th>
               <th className="px-4 py-3">Account type</th>
-              <th className="px-4 py-3">Employee roles</th>
+              <th className="px-4 py-3">Service team / roles</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Actions</th>
             </tr>
@@ -233,10 +235,11 @@ export function UserManagement({
                     <p className="truncate text-xs text-slate-500">{user.email ?? "No email"}</p>
                     {user.invitation_pending && <p className="mt-1 text-xs font-medium text-amber-700">Invitation pending</p>}
                   </td>
-                  <td className="px-4 py-4"><Badge value={user.user_side} /></td>
+                  <td className="px-4 py-4"><Badge value={accountTypeLabel(user.user_side)} /></td>
                   <td className="px-4 py-4">
-                    {user.employee_roles.length ? (
+                    {user.employee_roles.length || user.service_team ? (
                       <div className="flex max-w-sm flex-wrap gap-1.5">
+                        {user.service_team && <Badge value={user.service_team.name} className="normal-case tracking-normal" />}
                         {user.employee_roles.map((role) => <Badge key={role} value={role} className="normal-case tracking-normal" />)}
                       </div>
                     ) : <span className="text-slate-400">—</span>}
@@ -270,6 +273,7 @@ export function UserManagement({
           key={editing.id}
           user={editing}
           roles={roles}
+          teams={teams}
           saving={busyId === editing.id}
           onClose={() => setEditing(null)}
           onSubmit={handleEdit}
@@ -286,17 +290,20 @@ export function UserManagement({
 function EditManagedUserForm({
   user,
   roles,
+  teams,
   saving,
   onClose,
   onSubmit
 }: {
   user: ManagedProfile;
   roles: RoleOption[];
+  teams: ServiceTeam[];
   saving: boolean;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>, userId: string, side: UserSide) => void;
 }) {
   const [side, setSide] = useState<UserSide>(user.user_side);
+  const [teamId, setTeamId] = useState(String(user.service_team_id ?? teams.find((team) => team.slug === "it-support")?.id ?? ""));
   const [selectedRoles, setSelectedRoles] = useState<number[]>(
     roles.filter((role) => user.employee_roles.includes(role.name)).map((role) => role.id)
   );
@@ -312,21 +319,29 @@ function EditManagedUserForm({
       <form onSubmit={(event) => void onSubmit(event, user.id, side)} className="grid gap-5">
         <input type="hidden" name="user_id" value={user.id} />
         <div>
-          <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-accent"><ShieldCheck className="h-5 w-5" /></span><span><h3 id="edit-user-title" className="text-lg font-bold text-navy">Edit account</h3><p className="mt-1 text-sm text-slate-600">Change access and employee responsibilities.</p></span></div><button type="button" onClick={onClose} disabled={saving} aria-label="Close dialog" className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button></div>
+          <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-accent"><ShieldCheck className="h-5 w-5" /></span><span><h3 id="edit-user-title" className="text-lg font-bold text-navy">Edit account</h3><p className="mt-1 text-sm text-slate-600">Change access, service team, and provider responsibilities.</p></span></div><button type="button" onClick={onClose} disabled={saving} aria-label="Close dialog" className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button></div>
           <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">{user.full_name ?? user.email ?? "Account"}</p>
         </div>
         <label className="grid gap-2 text-sm font-semibold text-slate-700">
           Account type
           <select name="user_side" value={side} onChange={(event) => setSide(event.target.value as UserSide)} disabled={saving} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring">
-            <option value="client">Client</option>
-            <option value="employee">Employee</option>
+            <option value="client">End user</option>
+            <option value="employee">Service provider</option>
             <option value="admin">Admin</option>
           </select>
         </label>
         {side === "employee" && (
+          <>
+          <label className="grid gap-2 text-sm font-semibold text-slate-700">
+            Service team
+            <select name="service_team_id" value={teamId} onChange={(event) => setTeamId(event.target.value)} required disabled={saving} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring">
+              <option value="">Select a team</option>
+              {teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}
+            </select>
+          </label>
           <fieldset className="grid gap-3 rounded-xl border border-slate-200 p-4">
-            <legend className="px-1 text-sm font-semibold text-slate-700">Employee roles</legend>
-            {roles.length === 0 ? <p className="text-sm text-amber-800">No employee roles are configured.</p> : (
+            <legend className="px-1 text-sm font-semibold text-slate-700">Service provider roles</legend>
+            {roles.length === 0 ? <p className="text-sm text-amber-800">No service provider roles are configured.</p> : (
               <div className="flex flex-wrap gap-x-5 gap-y-2">
                 {roles.map((role) => (
                 <label key={role.id} className="flex cursor-pointer items-center gap-3 rounded-lg border border-slate-100 px-3 py-3 text-sm text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50/50">
@@ -337,6 +352,7 @@ function EditManagedUserForm({
               </div>
             )}
           </fieldset>
+          </>
         )}
         <div className="sticky bottom-0 -mx-5 -mb-5 flex flex-col-reverse gap-2 border-t border-slate-100 bg-white p-4 sm:static sm:mx-0 sm:mb-0 sm:flex-row sm:justify-end sm:border-0 sm:p-0">
           <button type="button" onClick={onClose} disabled={saving} className="focus-ring min-h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100">Cancel</button>
@@ -345,4 +361,10 @@ function EditManagedUserForm({
       </form>
     </div>
   );
+}
+
+function accountTypeLabel(side: UserSide) {
+  if (side === "client") return "End user";
+  if (side === "employee") return "Service provider";
+  return "Admin";
 }

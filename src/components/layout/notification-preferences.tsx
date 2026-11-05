@@ -9,8 +9,6 @@ import { Button } from "@/components/ui/button";
 const options = [
   { type: "ticket_submitted", label: "Ticket submitted", description: "A new ticket is submitted or assigned to you." },
   { type: "ticket_assigned", label: "Ticket assigned", description: "A ticket is assigned or unassigned." },
-  { type: "ticket_approved", label: "Approval decisions", description: "A project ticket is approved." },
-  { type: "ticket_rejected", label: "Rejections", description: "A project ticket or request is rejected." },
   { type: "ticket_updated", label: "Ticket updates and comments", description: "Ticket details, status, or comments change." }
 ] as const;
 

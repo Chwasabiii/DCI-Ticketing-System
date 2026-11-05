@@ -37,7 +37,7 @@ export function TicketTable({
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredTickets = useMemo(() => ([...tickets].filter((ticket) => !normalizedQuery || [ticket.ticket_no, ticket.title, ticket.status, ticket.priority, ticket.project?.name]
+  const filteredTickets = useMemo(() => ([...tickets].filter((ticket) => !normalizedQuery || [ticket.ticket_no, ticket.title, ticket.status, ticket.priority]
         .some((value) => value?.toLocaleLowerCase().includes(normalizedQuery)))
     ).sort((a, b) => {
       if (sortBy === "priority") {
@@ -76,7 +76,7 @@ export function TicketTable({
             type="search"
             value={query}
             onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-            placeholder="Search tickets, project, status..."
+            placeholder="Search tickets and status..."
             className="min-h-10 w-full rounded-xl border border-slate-200 px-3 text-sm focus-ring"
           />
         </label>
@@ -130,23 +130,7 @@ export function TicketTable({
                         </span>
                       </>
                     )}
-                    {ticket.project?.name && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="truncate">{ticket.project.name}</span>
-                      </>
-                    )}
                   </span>
-                  {ticket.approval_status === "pending" && (
-                    <span className="mt-2 inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800">
-                      Waiting for project approval
-                    </span>
-                  )}
-                  {ticket.approval_status === "rejected" && (
-                    <span className="mt-2 inline-flex rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-800">
-                      Project request rejected
-                    </span>
-                  )}
                   {nextActions[String(ticket.id)] && (
                     <span className="mt-2 inline-flex rounded-md bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-800">
                       Next: {nextActions[String(ticket.id)]}

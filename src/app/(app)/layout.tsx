@@ -21,7 +21,7 @@ export default async function AppLayout({
   if (!profile) redirect("/login");
   if (profile.status === "inactive") redirect("/account-archived");
 
-  const items = getNavItems(profile.user_side, roleNames);
+  const items = getNavItems(profile.user_side, roleNames, profile.service_team?.slug);
 
   return (
     <div className="flex min-h-screen bg-[#f4f6fa]">

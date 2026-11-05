@@ -3,8 +3,7 @@ import { getTickets } from "@/lib/data";
 
 export default async function QueuePage() {
   const tickets = (await getTickets(100)).filter((ticket) =>
-    ["open", "under_review"].includes(ticket.status) &&
-    !["pending", "rejected"].includes(ticket.approval_status ?? "")
+    ["open", "under_review"].includes(ticket.status)
   );
 
   return (
@@ -12,7 +11,7 @@ export default async function QueuePage() {
       <div>
         <h1 className="text-3xl font-bold text-navy">Incoming Queue</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Review new requests, set priority, assign an active employee, and route work to a discipline.
+          Review new requests, set priority, and assign an active employee.
         </p>
       </div>
       <TicketTable tickets={tickets} />

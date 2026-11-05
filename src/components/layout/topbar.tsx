@@ -27,6 +27,7 @@ export function Topbar({
     .sort((left, right) => right.href.length - left.href.length)
     .find((item) => pathname === item.href || pathname.startsWith(`${item.href}/`));
   const pageTitle = currentItem?.label ?? "Support center";
+  const serviceTeamItems = items.filter((item) => item.href === "/it-support" || item.href === "/cost-control");
 
   return (
     <header className="sticky top-0 z-20 flex min-h-[4.5rem] items-center gap-3 border-b border-slate-200/80 bg-white/95 px-4 backdrop-blur sm:px-6 lg:px-9">
@@ -34,6 +35,12 @@ export function Topbar({
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Support center</p>
         <h1 className="mt-0.5 truncate text-sm font-bold text-navy sm:text-base">{pageTitle}</h1>
       </div>
+      {serviceTeamItems.length > 0 && <nav aria-label="Service team pages" className="ml-3 hidden items-center gap-2 border-l border-slate-200 pl-4 sm:flex">
+        {serviceTeamItems.map((item) => {
+          const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${active ? "bg-blue-50 text-accent" : "text-slate-600 hover:bg-slate-50 hover:text-navy"}`}>{item.label}</Link>;
+        })}
+      </nav>}
       <div className="ml-auto hidden items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 sm:flex">
         <Headphones className="h-3.5 w-3.5" />
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />

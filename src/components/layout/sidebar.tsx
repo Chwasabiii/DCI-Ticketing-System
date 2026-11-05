@@ -107,7 +107,7 @@ export function Sidebar({ items }: { items: NavItem[] }) {
             Workspace
           </span>
         </p>
-        {items.map((item) => {
+        {items.filter((item) => item.href !== "/it-support" && item.href !== "/cost-control").map((item) => {
           const Icon = icons[item.icon];
           const active = isNavItemActive(pathname, item.href);
 

@@ -13,7 +13,7 @@ import {
   MAX_TICKET_ATTACHMENTS,
   uploadTicketAttachments
 } from "@/lib/attachments";
-import type { Category, Department, Discipline, Priority, Project, RequestType, SimilarTicket } from "@/lib/types";
+import type { Priority, RequestType, SimilarTicket } from "@/lib/types";
 
 const priorities: Priority[] = ["low", "medium", "high", "urgent"];
 
@@ -23,23 +23,15 @@ function fileSizeLabel(size: number) {
     : `${Math.max(1, Math.round(size / 1024))} KB`;
 }
 
-export function TicketForm() {
+export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [disciplines, setDisciplines] = useState<Discipline[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [referencesLoaded, setReferencesLoaded] = useState(false);
-  const [referenceError, setReferenceError] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [fileIssues, setFileIssues] = useState<string[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const [failedFiles, setFailedFiles] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedDiscipline, setSelectedDiscipline] = useState("");
   const [selectedPriority, setSelectedPriority] = useState<Priority>("medium");
-  const [selectedProject, setSelectedProject] = useState("");
   const [titleText, setTitleText] = useState("");
   const [descriptionText, setDescriptionText] = useState("");
   const [similarTickets, setSimilarTickets] = useState<SimilarTicket[]>([]);
@@ -48,42 +40,6 @@ export function TicketForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadReferenceData() {
-      try {
-        const response = await fetch("/api/reference-data", {
-          credentials: "same-origin"
-        });
-
-        if (!response.ok) throw new Error("Could not load ticket options.");
-
-        const data = (await response.json()) as {
-          categories: Category[];
-          disciplines: Discipline[];
-          departments: Department[];
-          projects: Project[];
-        };
-
-        if (!cancelled) {
-          setCategories(data.categories);
-          setDisciplines(data.disciplines);
-          setDepartments(data.departments);
-          setProjects(data.projects);
-          setReferencesLoaded(true);
-        }
-      } catch {
-        if (!cancelled) setReferenceError("Ticket options could not be loaded. You can still submit a general request.");
-      }
-    }
-
-    void loadReferenceData();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (titleText.trim().length < 8) {
@@ -104,7 +60,6 @@ export function TicketForm() {
           body: JSON.stringify({
             title: titleText,
             description: descriptionText,
-            projectId: selectedProject
           })
         });
         if (!response.ok) return;
@@ -121,7 +76,7 @@ export function TicketForm() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [titleText, descriptionText, selectedProject]);
+  }, [titleText, descriptionText]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -211,7 +166,8 @@ export function TicketForm() {
 
   return (
     <form onSubmit={handleSubmit} className="grid min-w-0 gap-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-7">
-      <div className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+      <input type="hidden" name="service_team_slug" value={teamSlug} />
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2">
         <label className="grid min-w-0 gap-2">
           <span className="text-sm font-semibold text-slate-700">Ticket title <span className="text-urgent">*</span></span>
         <input
@@ -224,38 +180,6 @@ export function TicketForm() {
           placeholder="e.g. Revised floor plans"
         />
       </label>
-        <label className="grid min-w-0 gap-2">
-          <span className="text-sm font-semibold text-slate-700">Requesting department{departments.length > 0 && <span className="text-urgent"> *</span>}</span>
-          <select
-            name="department_id"
-            required={referencesLoaded && departments.length > 0}
-            disabled={!referencesLoaded && !referenceError}
-            className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
-          >
-            <option value="">{referencesLoaded ? "Select department" : "Loading departments..."}</option>
-            {departments.map((department) => (
-              <option key={department.id} value={department.id}>{department.name}</option>
-            ))}
-          </select>
-        </label>
-        <label className="grid min-w-0 gap-2">
-          <span className="text-sm font-semibold text-slate-700">Related project</span>
-          <select
-            name="project_id"
-            value={selectedProject}
-            onChange={(event) => setSelectedProject(event.target.value)}
-            disabled={!referencesLoaded && !referenceError}
-            className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
-          >
-            <option value="">{referencesLoaded ? "No project" : "Loading projects..."}</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.project_code ? `${project.project_code} - ` : ""}
-                {project.name} ({project.status === "planned" ? "Planned" : "Ongoing"})
-              </option>
-            ))}
-          </select>
-        </label>
         <label className="grid min-w-0 gap-2">
           <span className="text-sm font-semibold text-slate-700">Request type</span>
           <select
@@ -280,60 +204,12 @@ export function TicketForm() {
         <span>
           <span className="block text-sm font-semibold text-slate-800">Confidential ticket</span>
           <span className="mt-0.5 block text-xs leading-5 text-slate-600">
-            Visible only to you, assigned staff, administrators, and any project approver who must review it.
+            Visible only to you, assigned staff, and administrators.
           </span>
         </span>
       </label>
 
-      <fieldset className="grid gap-2">
-        <legend className="text-sm font-semibold text-slate-700">Discipline / support group</legend>
-        <div className="flex flex-wrap gap-2">
-          <label className="cursor-pointer">
-            <input
-              type="radio"
-              name="discipline_id"
-              value=""
-              checked={selectedDiscipline === ""}
-              onChange={() => setSelectedDiscipline("")}
-              className="peer sr-only"
-            />
-            <span className="inline-flex min-h-9 items-center rounded-md border border-slate-200 px-3 text-xs font-medium text-slate-700 peer-checked:border-accent peer-checked:bg-blue-50 peer-checked:text-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent">
-              Let PMSG route this
-            </span>
-          </label>
-          {disciplines.map((discipline) => (
-            <label key={discipline.id} className="cursor-pointer">
-              <input
-                type="radio"
-                name="discipline_id"
-                value={discipline.id}
-                checked={selectedDiscipline === String(discipline.id)}
-                onChange={() => setSelectedDiscipline(String(discipline.id))}
-                disabled={!referencesLoaded}
-                className="peer sr-only"
-              />
-              <span className="inline-flex min-h-9 items-center rounded-md border border-slate-200 px-3 text-xs font-medium text-slate-700 peer-checked:border-accent peer-checked:bg-blue-50 peer-checked:text-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent">
-                {discipline.name}
-              </span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
       <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-        <label className="grid min-w-0 gap-2">
-          <span className="text-sm font-semibold text-slate-700">Request category</span>
-          <select
-            name="category_id"
-            disabled={!referencesLoaded && !referenceError}
-            className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
-          >
-            <option value="">{referencesLoaded ? "General request" : "Loading categories..."}</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>{category.name}</option>
-            ))}
-          </select>
-        </label>
         <fieldset className="grid content-start gap-2">
           <legend className="text-sm font-semibold text-slate-700">Priority</legend>
           <div className="flex gap-2">
@@ -356,11 +232,6 @@ export function TicketForm() {
         </fieldset>
       </div>
 
-      {referenceError && (
-        <p role="status" className="text-sm text-amber-700">
-          {referenceError}
-        </p>
-      )}
       <label className="grid gap-2">
         <span className="text-sm font-semibold text-slate-700">Description <span className="text-urgent">*</span></span>
         <textarea
@@ -394,7 +265,6 @@ export function TicketForm() {
                   </Link>
                   <span className="ml-2 text-xs capitalize text-amber-900">
                     {String(ticket.status).replaceAll("_", " ")}
-                    {ticket.project_name ? ` · ${ticket.project_name}` : ""}
                   </span>
                 </li>
               ))}
@@ -405,12 +275,6 @@ export function TicketForm() {
           <p className="mt-2 text-xs text-amber-900">These are suggestions; you can still submit if this is a separate request.</p>
         </section>
       )}
-      {selectedProject && (
-        <p className="text-sm text-amber-800">
-          Project-linked requests require approval from the project PM or a designated project approver before work can be routed.
-        </p>
-      )}
-
       <div className="grid gap-2">
         <span className="text-sm font-semibold text-slate-700">Supporting attachments</span>
         <input

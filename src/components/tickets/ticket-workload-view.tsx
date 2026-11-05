@@ -5,12 +5,11 @@ import { TicketTable } from "@/components/tickets/ticket-table";
 import type { Ticket } from "@/lib/types";
 import { isTicketOverdue } from "@/lib/utils";
 
-type WorkloadFilter = "all" | "assigned" | "approval" | "overdue";
+type WorkloadFilter = "all" | "assigned" | "overdue";
 
 const filters: Array<{ value: WorkloadFilter; label: string }> = [
   { value: "all", label: "All tickets" },
   { value: "assigned", label: "Assigned to me" },
-  { value: "approval", label: "Waiting for approval" },
   { value: "overdue", label: "Overdue" }
 ];
 
@@ -20,7 +19,6 @@ export function TicketWorkloadView({ tickets, currentUserId }: { tickets: Ticket
     if (filter === "assigned") {
       return ticket.assigned_to === currentUserId && !["resolved", "closed", "rejected"].includes(ticket.status);
     }
-    if (filter === "approval") return ticket.approval_status === "pending";
     if (filter === "overdue") return isTicketOverdue(ticket);
     return true;
   });
@@ -44,7 +42,6 @@ export function TicketWorkloadView({ tickets, currentUserId }: { tickets: Ticket
             <span className="ml-2 text-xs opacity-70">
               {item.value === "all" ? tickets.length : tickets.filter((ticket) => {
                 if (item.value === "assigned") return ticket.assigned_to === currentUserId && !["resolved", "closed", "rejected"].includes(ticket.status);
-                if (item.value === "approval") return ticket.approval_status === "pending";
                 return isTicketOverdue(ticket);
               }).length}
             </span>

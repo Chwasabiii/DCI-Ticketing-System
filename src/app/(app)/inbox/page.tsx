@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { TicketTriageInbox } from "@/components/tickets/ticket-triage-inbox";
 import { getAllTickets, getAssignableEmployees, getCurrentContext, getTicketSlaPolicies } from "@/lib/data";
-import { createClient } from "@/lib/supabase/server";
 
-const allowedViews = ["all", "unassigned", "mine", "approval", "overdue"] as const;
+const allowedViews = ["all", "unassigned", "mine", "overdue"] as const;
 
 export default async function TriageInboxPage({
   searchParams
@@ -19,22 +18,12 @@ export default async function TriageInboxPage({
   if (!profile) redirect("/login");
   if (profile.user_side === "client") redirect("/tickets");
 
-  const supabase = await createClient();
-  const [projectsResult, approversResult] = await Promise.all([
-    supabase.from("projects").select("id").eq("pm_user_id", profile.id),
-    supabase.from("project_approvers").select("project_id").eq("user_id", profile.id)
-  ]);
-  if (projectsResult.error || approversResult.error) {
-    throw new Error("Could not load your project approval assignments.");
-  }
-  const approvableProjectIds = [
-    ...(projectsResult.data ?? []).map((project) => String(project.id)),
-    ...(approversResult.data ?? []).map((approver) => String(approver.project_id))
-  ];
   const initialView = allowedViews.find((view) => view === params.view) ?? "all";
-  const canAssign = profile.user_side === "admin" || roleNames.some((role) => ["Coordinator", "Discipline Lead"].includes(role));
-  const canChangeStatus = profile.user_side === "admin" || roleNames.some((role) => ["Personnel", "Discipline Lead"].includes(role));
-  const employees = canAssign ? await getAssignableEmployees() : [];
+  const canAssign = profile.user_side === "admin" || roleNames.includes("Coordinator");
+  const canChangeStatus = profile.user_side === "admin" || roleNames.includes("Personnel");
+  const employees = canAssign
+    ? await getAssignableEmployees(profile.user_side === "employee" ? profile.service_team_id : undefined)
+    : [];
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5">
@@ -48,7 +37,6 @@ export default async function TriageInboxPage({
       <TicketTriageInbox
         tickets={tickets}
         currentUserId={profile.id}
-        approvableProjectIds={approvableProjectIds}
         slaPolicies={slaPolicies}
         employees={employees}
         canAssign={canAssign}

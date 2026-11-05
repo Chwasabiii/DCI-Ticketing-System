@@ -23,10 +23,10 @@ export default function LoginPage() {
           <div className="my-auto max-w-xl py-10 lg:py-16">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-blue-100">
               <Headphones className="h-3.5 w-3.5" />
-              Project support, all in one place
+              Support requests, all in one place
             </div>
             <h1 className="mt-6 max-w-lg text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-[2.75rem]">
-              Keep every project moving forward.
+              Keep work moving forward.
             </h1>
             <p className="mt-4 max-w-lg text-sm leading-6 text-blue-100/85 sm:text-base sm:leading-7">
               Raise a request, follow its progress, and get connected with the
@@ -36,8 +36,7 @@ export default function LoginPage() {
             <div className="mt-8 grid gap-3 sm:grid-cols-2">
               {[
                 "Track support requests",
-                "Route by discipline",
-                "Coordinate project approvals",
+                "Assign to support staff",
                 "Find answers in FAQs"
               ].map((feature) => (
                 <div

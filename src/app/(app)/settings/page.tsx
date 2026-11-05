@@ -21,10 +21,14 @@ export default async function SettingsPage() {
           </p>
         </div>
       </div>
-      <dl className="mt-8 grid gap-4 text-sm sm:grid-cols-3">
+      <dl className="mt-8 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-md border border-slate-200 p-4">
-          <dt className="font-semibold text-slate-500">User side</dt>
-          <dd className="mt-1 capitalize text-slate-900">{profile?.user_side}</dd>
+          <dt className="font-semibold text-slate-500">Account type</dt>
+          <dd className="mt-1 text-slate-900">{profile?.user_side === "client" ? "End user" : profile?.user_side === "employee" ? "Service provider" : "Admin"}</dd>
+        </div>
+        <div className="rounded-md border border-slate-200 p-4">
+          <dt className="font-semibold text-slate-500">Service team</dt>
+          <dd className="mt-1 text-slate-900">{profile?.service_team?.name ?? "Not assigned"}</dd>
         </div>
         <div className="rounded-md border border-slate-200 p-4">
           <dt className="font-semibold text-slate-500">Roles</dt>

@@ -8,7 +8,6 @@ import type {
   Comment,
   EmployeeRole,
   Priority,
-  ProjectStatus,
   TicketStatus,
   UserSide
 } from "@/lib/types";
@@ -50,7 +49,7 @@ function value(formData: FormData, name: string) {
 async function getActiveTicketActor(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("user_side, status")
+    .select("user_side, status, service_team_id")
     .eq("id", userId)
     .maybeSingle();
   if (profileError) return { error: `Could not verify your account: ${profileError.message}` } as const;
@@ -128,15 +127,22 @@ export async function inviteUser(formData: FormData) {
   const email = value(formData, "email")?.toLowerCase();
   const requestedSide = value(formData, "user_side");
   const userSide: UserSide | null =
-    requestedSide === "client" || requestedSide === "employee" ? requestedSide : null;
+    requestedSide === "client" || requestedSide === "employee" || requestedSide === "admin" ? requestedSide : null;
 
   if (!fullName || !email || !userSide) {
     return { error: "Enter a name, email, and valid account type." };
   }
 
+  const requestedTeamId = value(formData, "service_team_id");
+  const serviceTeamId = userSide === "employee" && requestedTeamId && /^\d+$/.test(requestedTeamId)
+    ? Number(requestedTeamId)
+    : null;
+  if (userSide === "employee" && !serviceTeamId) {
+    return { error: "Choose a service team for this service provider." };
+  }
+
   const validRoles: EmployeeRole[] = [
     "Coordinator",
-    "Discipline Lead",
     "Personnel",
     "Manager"
   ];
@@ -147,7 +153,13 @@ export async function inviteUser(formData: FormData) {
     );
 
   if (userSide === "employee" && selectedRoles.length === 0) {
-    return { error: "Select at least one employee role." };
+    return { error: "Select at least one service provider role." };
+  }
+
+  if (serviceTeamId) {
+    const { data: team, error: teamError } = await supabase.from("service_teams")
+      .select("id").eq("id", serviceTeamId).eq("is_active", true).maybeSingle();
+    if (teamError || !team) return { error: "Choose an active service team." };
   }
 
   let adminClient;
@@ -197,6 +209,7 @@ export async function inviteUser(formData: FormData) {
       full_name: fullName,
       email,
       user_side: userSide,
+      service_team_id: serviceTeamId,
       status: "active",
       invitation_pending: true
     })
@@ -338,6 +351,19 @@ export async function updateManagedUser(formData: FormData) {
     .maybeSingle();
   if (targetError || !target) return { error: "That account could not be found." };
 
+  const requestedTeamId = value(formData, "service_team_id");
+  const serviceTeamId = userSide === "employee" && requestedTeamId && /^\d+$/.test(requestedTeamId)
+    ? Number(requestedTeamId)
+    : null;
+  if (userSide === "employee" && !serviceTeamId) {
+    return { error: "Choose a service team for this service provider." };
+  }
+  if (serviceTeamId) {
+    const { data: team, error } = await context.adminClient.from("service_teams")
+      .select("id").eq("id", serviceTeamId).eq("is_active", true).maybeSingle();
+    if (error || !team) return { error: "Choose an active service team." };
+  }
+
   if (target.user_side === "admin" && target.status === "active" && userSide !== "admin") {
     const { count, error } = await context.adminClient
       .from("profiles")
@@ -359,8 +385,9 @@ export async function updateManagedUser(formData: FormData) {
   if (requestedRoleIds.length > 0) {
     const { data: roles, error } = await context.adminClient
       .from("roles")
-      .select("id")
-      .in("id", requestedRoleIds);
+      .select("id, name")
+      .in("id", requestedRoleIds)
+      .in("name", ["Coordinator", "Personnel", "Manager"]);
     if (error) return { error: `Could not verify employee roles: ${error.message}` };
     if ((roles?.length ?? 0) !== requestedRoleIds.length) {
       return { error: "One or more selected employee roles are invalid." };
@@ -377,7 +404,7 @@ export async function updateManagedUser(formData: FormData) {
 
   const { error: profileError } = await context.adminClient
     .from("profiles")
-    .update({ user_side: userSide })
+    .update({ user_side: userSide, service_team_id: serviceTeamId })
     .eq("id", userId);
   if (profileError) return { error: `Could not update account type: ${profileError.message}` };
 
@@ -442,237 +469,6 @@ export async function reactivateUser(formData: FormData) {
   return setManagedUserStatus(formData, "active");
 }
 
-export async function createProject(formData: FormData) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Sign in as an administrator to add projects." };
-
-  const { data: actor } = await supabase
-    .from("profiles")
-    .select("user_side, status")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (actor?.user_side !== "admin" || actor.status !== "active") {
-    return { error: "Only active administrators can manage projects." };
-  }
-
-  const name = value(formData, "name");
-  const projectCode = value(formData, "project_code");
-  const location = value(formData, "location");
-  const requestedStatus = value(formData, "status");
-  const status: ProjectStatus | null =
-    requestedStatus === "planned" || requestedStatus === "ongoing"
-      ? requestedStatus
-      : null;
-
-  if (!name || !status) {
-    return { error: "Enter a project name and select Planned or Ongoing." };
-  }
-  if (name.length > 200 || (projectCode?.length ?? 0) > 100 || (location?.length ?? 0) > 200) {
-    return { error: "Project name, code, or location is too long." };
-  }
-
-  const { error } = await supabase.from("projects").insert({
-    name,
-    project_code: projectCode,
-    location,
-    status
-  });
-  if (error) return { error: `The project could not be added: ${error.message}` };
-
-  revalidatePath("/admin/projects");
-  revalidatePath("/api/reference-data");
-  revalidatePath("/tickets/new");
-  return { success: `Project "${name}" added.` };
-}
-
-export async function updateProjectStatus(formData: FormData) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Sign in as an administrator to update projects." };
-
-  const { data: actor } = await supabase
-    .from("profiles")
-    .select("user_side, status")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (actor?.user_side !== "admin" || actor.status !== "active") {
-    return { error: "Only active administrators can manage projects." };
-  }
-
-  const projectId = value(formData, "project_id");
-  const requestedStatus = value(formData, "status");
-  const statuses: ProjectStatus[] = ["planned", "ongoing", "completed"];
-  const status = statuses.find((option) => option === requestedStatus);
-  if (!projectId || !/^\d+$/.test(projectId) || !status) {
-    return { error: "Select a valid project and status." };
-  }
-
-  const { data: project, error } = await supabase
-    .from("projects")
-    .update({ status })
-    .eq("id", projectId)
-    .select("id")
-    .maybeSingle();
-  if (error) return { error: `The project status could not be updated: ${error.message}` };
-  if (!project) return { error: "The project was not found or could not be updated." };
-
-  revalidatePath("/admin/projects");
-  revalidatePath("/api/reference-data");
-  revalidatePath("/tickets/new");
-  return { success: "Project status updated." };
-}
-
-export async function setProjectApprovers(formData: FormData) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Sign in as an administrator to assign project approvers." };
-
-  const { data: actor } = await supabase
-    .from("profiles")
-    .select("user_side, status")
-    .eq("id", user.id)
-    .maybeSingle();
-  if (actor?.user_side !== "admin" || actor.status !== "active") {
-    return { error: "Only active administrators can assign project approvers." };
-  }
-
-  const projectId = value(formData, "project_id");
-  const pmUserId = value(formData, "pm_user_id");
-  const approverIds = formData
-    .getAll("approvers")
-    .filter((id): id is string => typeof id === "string" && id.length > 0);
-  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-  if (
-    !projectId ||
-    !/^\d+$/.test(projectId) ||
-    (pmUserId !== null && !uuidPattern.test(pmUserId)) ||
-    approverIds.some((id) => !uuidPattern.test(id)) ||
-    (!pmUserId && approverIds.length === 0)
-  ) {
-    return { error: "Choose a valid PM or at least one project approver." };
-  }
-
-  const { error } = await supabase.rpc("set_project_approvers", {
-    p_project_id: Number(projectId),
-    p_pm_user_id: pmUserId,
-    p_approver_ids: approverIds
-  });
-  if (error) return { error: `Project approvers could not be saved: ${error.message}` };
-
-  revalidatePath("/admin/projects");
-  revalidatePath("/approvals");
-  return { success: "Project approvers saved." };
-}
-
-export async function saveTicketRoutingRule(formData: FormData) {
-  const context = await getAdminMutationContext();
-  if ("error" in context) return context;
-
-  const name = value(formData, "name");
-  const projectId = value(formData, "project_id");
-  const categoryId = value(formData, "category_id");
-  const requestType = value(formData, "request_type");
-  const disciplineId = value(formData, "discipline_id");
-  const assignedTo = value(formData, "assigned_to");
-  const ruleId = value(formData, "rule_id");
-  const rulePriorityText = value(formData, "rule_priority") ?? "100";
-  const validRequestTypes = ["general", "access_request", "incident_report"];
-
-  if (
-    !name || name.length > 100 ||
-    [projectId, categoryId, disciplineId].some((id) => id !== null && !/^\d+$/.test(id)) ||
-    (requestType !== null && !validRequestTypes.includes(requestType)) ||
-    (assignedTo !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assignedTo)) ||
-    (ruleId !== null && !/^\d+$/.test(ruleId)) ||
-    !/^\d+$/.test(rulePriorityText) || Number(rulePriorityText) > 9999
-  ) {
-    return { error: "Enter a valid rule name, criteria, route target, and order." };
-  }
-  if ((!projectId && !categoryId && !requestType) || (!disciplineId && !assignedTo)) {
-    return { error: "Choose at least one match condition and at least one routing target." };
-  }
-
-  const admin = context.adminClient;
-  if (projectId) {
-    const { data } = await admin.from("projects").select("id").eq("id", projectId).maybeSingle();
-    if (!data) return { error: "Choose an existing project." };
-  }
-  if (categoryId) {
-    const { data } = await admin.from("categories").select("id").eq("id", categoryId).maybeSingle();
-    if (!data) return { error: "Choose an existing category." };
-  }
-  if (disciplineId) {
-    const { data } = await admin.from("disciplines").select("id").eq("id", disciplineId).eq("status", "active").maybeSingle();
-    if (!data) return { error: "Choose an active discipline." };
-  }
-  if (assignedTo) {
-    const { data } = await admin.from("profiles")
-      .select("id")
-      .eq("id", assignedTo)
-      .eq("user_side", "employee")
-      .eq("status", "active")
-      .maybeSingle();
-    if (!data) return { error: "Choose an active employee as the assignee." };
-  }
-
-  const rule = {
-    name,
-    project_id: projectId ? Number(projectId) : null,
-    category_id: categoryId ? Number(categoryId) : null,
-    request_type: requestType,
-    discipline_id: disciplineId ? Number(disciplineId) : null,
-    assigned_to: assignedTo,
-    rule_priority: Number(rulePriorityText),
-    is_active: formData.get("is_active") === "on"
-  };
-
-  if (ruleId) {
-    const { data, error } = await admin.from("ticket_routing_rules")
-      .update(rule)
-      .eq("id", Number(ruleId))
-      .select("id")
-      .maybeSingle();
-    if (error) return { error: `Could not update routing rule: ${error.message}` };
-    if (!data) return { error: "Routing rule not found." };
-  } else {
-    const { error } = await admin.from("ticket_routing_rules").insert(rule);
-    if (error) return { error: `Could not create routing rule: ${error.message}` };
-  }
-
-  revalidatePath("/admin/routing");
-  revalidatePath("/inbox");
-  revalidatePath("/queue");
-  return { success: ruleId ? "Routing rule updated." : "Routing rule created." };
-}
-
-export async function deleteTicketRoutingRule(formData: FormData) {
-  const context = await getAdminMutationContext();
-  if ("error" in context) return context;
-  const ruleId = value(formData, "rule_id");
-  if (!ruleId || !/^\d+$/.test(ruleId)) return { error: "Choose a valid routing rule." };
-
-  const { data, error } = await context.adminClient.from("ticket_routing_rules")
-    .delete()
-    .eq("id", Number(ruleId))
-    .select("id")
-    .maybeSingle();
-  if (error) return { error: `Could not delete routing rule: ${error.message}` };
-  if (!data) return { error: "Routing rule not found." };
-
-  revalidatePath("/admin/routing");
-  revalidatePath("/inbox");
-  revalidatePath("/queue");
-  return { success: "Routing rule deleted." };
-}
-
 export async function createTicket(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -697,6 +493,9 @@ export async function createTicket(formData: FormData) {
   if (requesterProfile.status !== "active") {
     return { error: "This account is archived. Contact an administrator to restore access." };
   }
+  if (requesterProfile.user_side !== "client") {
+    return { error: "Only end users can submit support tickets." };
+  }
 
   const { data: currentSide, error: currentSideError } =
     await supabase.rpc("current_side");
@@ -713,7 +512,7 @@ export async function createTicket(formData: FormData) {
 
   const title = value(formData, "title");
   const description = value(formData, "description");
-  const projectId = value(formData, "project_id");
+  const teamSlug = value(formData, "service_team_slug") ?? "it-support";
   const requestedType = value(formData, "request_type") ?? "general";
   const requestTypes = ["general", "access_request", "incident_report"] as const;
   const requestType = requestTypes.find((option) => option === requestedType);
@@ -729,31 +528,14 @@ export async function createTicket(formData: FormData) {
   }
   if (!requestType) return { error: "Choose a valid request type." };
 
-  if (projectId) {
-    if (!/^\d+$/.test(projectId)) {
-      return { error: "Select a valid project." };
-    }
-    const { data: project, error: projectError } = await supabase
-      .from("projects")
-      .select("id")
-      .eq("id", projectId)
-      .in("status", ["planned", "ongoing"])
-      .maybeSingle();
-    if (projectError) {
-      return { error: `Could not validate the selected project: ${projectError.message}` };
-    }
-    if (!project) return { error: "Select a Planned or Ongoing project." };
-
-    const { data: hasActiveApprover, error: activeApproverError } = await supabase.rpc(
-      "project_has_active_approver",
-      { p_project_id: Number(projectId) }
-    );
-    if (activeApproverError) {
-      return { error: `Could not validate project approvers: ${activeApproverError.message}` };
-    }
-    if (!hasActiveApprover) {
-      return { error: "An administrator must assign an active PM or project approver before tickets can be submitted for this project." };
-    }
+  const { data: serviceTeam, error: teamError } = await supabase.from("service_teams")
+    .select("id, slug, is_in_scope, is_active")
+    .eq("slug", teamSlug).maybeSingle();
+  if (teamError || !serviceTeam?.is_active || !serviceTeam.is_in_scope) {
+    return { error: "Choose an active service team." };
+  }
+  if (serviceTeam.slug !== "it-support") {
+    return { error: "Cost Control Group ticket submission will be available when its workflow is defined." };
   }
 
   const { data: ticket, error } = await supabase
@@ -762,10 +544,7 @@ export async function createTicket(formData: FormData) {
       title,
       description,
       requester_id: user.id,
-      department_id: value(formData, "department_id"),
-      project_id: projectId,
-      category_id: value(formData, "category_id"),
-      discipline_id: value(formData, "discipline_id"),
+      service_team_id: serviceTeam.id,
       request_type: requestType,
       is_confidential: formData.get("is_confidential") === "on",
       priority,
@@ -984,19 +763,9 @@ export async function updateTicketStatus(formData: FormData) {
   }
   if (
     actor.profile.user_side !== "admin" &&
-    !actor.roles.some((role) => ["Personnel", "Discipline Lead"].includes(role))
+    !actor.roles.includes("Personnel")
   ) {
-    return { error: "Only Personnel, Discipline Leads, or administrators can update ticket status." };
-  }
-
-  const { data: currentTicket, error: ticketLookupError } = await supabase
-    .from("tickets")
-    .select("approval_status")
-    .eq("id", ticketId)
-    .maybeSingle();
-  if (ticketLookupError) return { error: ticketLookupError.message };
-  if (currentTicket?.approval_status === "pending" || currentTicket?.approval_status === "rejected") {
-    return { error: "This ticket cannot be worked until project approval is complete." };
+    return { error: "Only Personnel or administrators can update ticket status." };
   }
 
   const update: { status: TicketStatus; resolution_notes?: string; resolved_at?: string | null } = { status };
@@ -1034,9 +803,9 @@ export async function routeTicket(formData: FormData) {
   if ("error" in actor) return actor;
   if (
     actor.profile.user_side !== "admin" &&
-    !actor.roles.some((role) => ["Coordinator", "Discipline Lead"].includes(role))
+    !actor.roles.includes("Coordinator")
   ) {
-    return { error: "Only Coordinators, Discipline Leads, or administrators can route tickets." };
+    return { error: "Only Coordinators or administrators can route tickets." };
   }
 
   const ticketId = value(formData, "ticket_id");
@@ -1059,23 +828,21 @@ export async function routeTicket(formData: FormData) {
   const status = allowedStatuses.find((option) => option === requestedStatus);
 
   if (!ticketId || !priority || !status) {
-    return { error: "Choose a valid discipline, priority, assignee, and status." };
+    return { error: "Choose a valid priority, assignee, and status." };
   }
   if (["resolved", "closed", "rejected"].includes(status)) {
-    return { error: "Routing cannot resolve, close, or reject a ticket. Use the ticket status or approval action." };
+    return { error: "Routing cannot resolve, close, or reject a ticket. Use the ticket status action." };
   }
   if (dueDate && (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || Number.isNaN(Date.parse(`${dueDate}T00:00:00Z`)))) {
     return { error: "Choose a valid due date." };
   }
 
-  const { data: currentTicket, error: ticketLookupError } = await supabase
-    .from("tickets")
-    .select("approval_status")
-    .eq("id", ticketId)
-    .maybeSingle();
-  if (ticketLookupError) return { error: ticketLookupError.message };
-  if (currentTicket?.approval_status === "pending" || currentTicket?.approval_status === "rejected") {
-    return { error: "This ticket cannot be routed until project approval is complete." };
+  const { data: currentTicket, error: ticketError } = await supabase.from("tickets")
+    .select("service_team_id").eq("id", ticketId).maybeSingle();
+  if (ticketError) return { error: ticketError.message };
+  if (!currentTicket) return { error: "You cannot access this ticket." };
+  if (actor.profile.user_side === "employee" && actor.profile.service_team_id !== currentTicket.service_team_id) {
+    return { error: "You can only assign tickets for your service team." };
   }
 
   if (assignedTo) {
@@ -1085,6 +852,7 @@ export async function routeTicket(formData: FormData) {
       .eq("id", assignedTo)
       .eq("user_side", "employee")
       .eq("status", "active")
+      .eq("service_team_id", currentTicket.service_team_id)
       .maybeSingle();
 
     if (!assignee) return { error: "Choose an active employee as the assignee." };
@@ -1094,7 +862,6 @@ export async function routeTicket(formData: FormData) {
     .from("tickets")
     .update({
       priority,
-      discipline_id: value(formData, "discipline_id"),
       assigned_to: assignedTo,
       due_date: dueDate,
       status,
@@ -1129,19 +896,30 @@ export async function bulkUpdateTickets(formData: FormData) {
   const patch: { assigned_to?: string | null; status?: TicketStatus; resolved_at?: string | null } = {};
 
   if (operation === "assign") {
-    if (actor.profile.user_side !== "admin" && !actor.roles.some((role) => ["Coordinator", "Discipline Lead"].includes(role))) {
-      return { error: "Only Coordinators, Discipline Leads, or administrators can bulk assign tickets." };
+    if (actor.profile.user_side !== "admin" && !actor.roles.includes("Coordinator")) {
+      return { error: "Only Coordinators or administrators can bulk assign tickets." };
     }
     const assigneeId = value(formData, "assigned_to");
     if (assigneeId) {
+      const { data: currentTickets, error: ticketsError } = await supabase.from("tickets")
+        .select("id, service_team_id").in("id", ids);
+      if (ticketsError) return { error: ticketsError.message };
+      if ((currentTickets ?? []).length !== ids.length) return { error: "Some selected tickets are unavailable to you." };
+      const teamIds = new Set((currentTickets ?? []).map((ticket) => ticket.service_team_id));
+      if (teamIds.size !== 1 || teamIds.has(null)) return { error: "Assign tickets from one service team at a time." };
+      const serviceTeamId = [...teamIds][0];
+      if (actor.profile.user_side === "employee" && actor.profile.service_team_id !== serviceTeamId) {
+        return { error: "You can only assign tickets for your service team." };
+      }
       const { data: assignee } = await supabase.from("profiles").select("id")
-        .eq("id", assigneeId).eq("user_side", "employee").eq("status", "active").maybeSingle();
+        .eq("id", assigneeId).eq("user_side", "employee").eq("status", "active")
+        .eq("service_team_id", serviceTeamId).maybeSingle();
       if (!assignee) return { error: "Choose an active employee as the assignee." };
     }
     patch.assigned_to = assigneeId;
   } else if (operation === "status") {
-    if (actor.profile.user_side !== "admin" && !actor.roles.some((role) => ["Personnel", "Discipline Lead"].includes(role))) {
-      return { error: "Only Personnel, Discipline Leads, or administrators can bulk update status." };
+    if (actor.profile.user_side !== "admin" && !actor.roles.includes("Personnel")) {
+      return { error: "Only Personnel or administrators can bulk update status." };
     }
     const status = value(formData, "status");
     if (!status || !["under_review", "assigned", "in_progress", "waiting_for_info", "resolved"].includes(status)) {
@@ -1151,17 +929,9 @@ export async function bulkUpdateTickets(formData: FormData) {
     patch.resolved_at = status === "resolved" ? new Date().toISOString() : null;
   } else return { error: "Choose an assignment or status action." };
 
-  const { data: currentTickets, error: lookupError } = await supabase.from("tickets")
-    .select("id, approval_status").in("id", ids);
-  if (lookupError) return { error: lookupError.message };
-  if ((currentTickets ?? []).length !== ids.length) return { error: "Some selected tickets are unavailable to you. Refresh the inbox and try again." };
-  if (currentTickets?.some((ticket) => ticket.approval_status === "pending" || ticket.approval_status === "rejected")) {
-    return { error: "Remove tickets awaiting or denied project approval before applying bulk changes." };
-  }
-
   const { data, error } = await supabase.from("tickets").update(patch).in("id", ids).select("id");
   if (error) return { error: error.message };
-  if ((data ?? []).length !== ids.length) return { error: `Updated ${data?.length ?? 0} of ${ids.length} selected tickets. Some may be outside your permissions or awaiting approval.` };
+  if ((data ?? []).length !== ids.length) return { error: `Updated ${data?.length ?? 0} of ${ids.length} selected tickets. Some may be outside your permissions.` };
   revalidatePath("/inbox");
   revalidatePath("/tickets");
   revalidatePath("/queue");
@@ -1199,8 +969,8 @@ export async function handoffTicket(formData: FormData) {
   if (!user) return { error: "Sign in to hand off this ticket." };
   const actor = await getActiveTicketActor(supabase, user.id);
   if ("error" in actor) return actor;
-  if (actor.profile.user_side !== "admin" && !actor.roles.some((role) => ["Coordinator", "Discipline Lead"].includes(role))) {
-    return { error: "Only Coordinators, Discipline Leads, or administrators can hand off tickets." };
+  if (actor.profile.user_side !== "admin" && !actor.roles.includes("Coordinator")) {
+    return { error: "Only Coordinators or administrators can hand off tickets." };
   }
   const ticketId = value(formData, "ticket_id");
   const assignedTo = value(formData, "assigned_to");
@@ -1218,42 +988,6 @@ export async function handoffTicket(formData: FormData) {
   revalidatePath("/tickets");
   revalidatePath("/dashboard");
   return { success: "Ticket handed off with a staff-only note." };
-}
-
-export async function reviewProjectTicket(formData: FormData) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "Sign in to review this project ticket." };
-
-  const ticketId = value(formData, "ticket_id");
-  const decision = value(formData, "decision");
-  const comment = value(formData, "comment");
-  if (!ticketId || !/^\d+$/.test(ticketId) || !["approved", "rejected"].includes(decision ?? "")) {
-    return { error: "Choose a valid approval decision." };
-  }
-  if (decision === "rejected" && !comment) {
-    return { error: "Enter a reason when rejecting a ticket." };
-  }
-  if ((comment?.length ?? 0) > 2000) {
-    return { error: "Approval comments must be 2000 characters or fewer." };
-  }
-
-  const { error } = await supabase.rpc("review_project_ticket", {
-    p_ticket_id: Number(ticketId),
-    p_decision: decision,
-    p_comment: comment
-  });
-  if (error) return { error: error.message };
-
-  revalidatePath(`/tickets/${ticketId}`);
-  revalidatePath("/approvals");
-  revalidatePath("/tickets");
-  revalidatePath("/dashboard");
-  revalidatePath("/queue");
-  revalidatePath("/inbox");
-  return { success: decision === "approved" ? "Ticket approved." : "Ticket rejected." };
 }
 
 export async function markNotificationRead(formData: FormData) {
@@ -1300,7 +1034,7 @@ export async function saveNotificationPreferences(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to update notification preferences." };
 
-  const allowedTypes = ["ticket_submitted", "ticket_assigned", "ticket_approved", "ticket_rejected", "ticket_updated"] as const;
+  const allowedTypes = ["ticket_submitted", "ticket_assigned", "ticket_updated"] as const;
   const enabledTypes = new Set(formData.getAll("enabled_types").filter((item): item is string => typeof item === "string"));
   if ([...enabledTypes].some((type) => !allowedTypes.includes(type as typeof allowedTypes[number]))) {
     return { error: "One or more notification options are invalid." };
@@ -1327,15 +1061,24 @@ export async function saveFaq(formData: FormData) {
   const {
     data: { user }
   } = await supabase.auth.getUser();
-  if (!user) return { error: "Sign in as an administrator to manage FAQs." };
+  if (!user) return { error: "Sign in to manage FAQs." };
 
   const { data: actor } = await supabase
     .from("profiles")
-    .select("user_side, status")
+    .select("user_side, status, service_team_id")
     .eq("id", user.id)
     .maybeSingle();
-  if (actor?.user_side !== "admin" || actor.status !== "active") {
-    return { error: "Only active administrators can manage FAQs." };
+  if (!actor || actor.status !== "active") return { error: "An active account is required to manage FAQs." };
+  let serviceTeamId: number | null = null;
+  if (actor.user_side === "employee") {
+    if (!actor.service_team_id) return { error: "Your account is not assigned to an FAQ-enabled service team." };
+    const { data: team } = await supabase.from("service_teams")
+      .select("id").eq("id", actor.service_team_id).eq("is_active", true)
+      .in("slug", ["it-support", "cost-control"]).maybeSingle();
+    if (!team) return { error: "Only IT Support and Cost Control Group providers can manage FAQs." };
+    serviceTeamId = team.id;
+  } else if (actor.user_side !== "admin") {
+    return { error: "Only administrators and IT Support or Cost Control Group providers can manage FAQs." };
   }
 
   const id = value(formData, "faq_id");
@@ -1359,9 +1102,14 @@ export async function saveFaq(formData: FormData) {
     display_order: displayOrder,
     is_published: formData.get("is_published") === "on"
   };
-  const result = id
-    ? await supabase.from("faq_entries").update(entry).eq("id", Number(id)).select("id").maybeSingle()
-    : await supabase.from("faq_entries").insert(entry).select("id").single();
+  let result;
+  if (id) {
+    let query = supabase.from("faq_entries").update(entry).eq("id", Number(id));
+    if (serviceTeamId !== null) query = query.eq("service_team_id", serviceTeamId);
+    result = await query.select("id").maybeSingle();
+  } else {
+    result = await supabase.from("faq_entries").insert({ ...entry, service_team_id: serviceTeamId }).select("id").single();
+  }
 
   if (result.error) return { error: `FAQ could not be saved: ${result.error.message}` };
   if (!result.data) return { error: "The FAQ was not found or could not be saved." };
@@ -1376,26 +1124,32 @@ export async function deleteFaq(formData: FormData) {
   const {
     data: { user }
   } = await supabase.auth.getUser();
-  if (!user) return { error: "Sign in as an administrator to manage FAQs." };
+  if (!user) return { error: "Sign in to manage FAQs." };
 
   const { data: actor } = await supabase
     .from("profiles")
-    .select("user_side, status")
+    .select("user_side, status, service_team_id")
     .eq("id", user.id)
     .maybeSingle();
-  if (actor?.user_side !== "admin" || actor.status !== "active") {
-    return { error: "Only active administrators can manage FAQs." };
+  if (!actor || actor.status !== "active") return { error: "An active account is required to manage FAQs." };
+  let serviceTeamId: number | null = null;
+  if (actor.user_side === "employee") {
+    if (!actor.service_team_id) return { error: "Your account is not assigned to an FAQ-enabled service team." };
+    const { data: team } = await supabase.from("service_teams")
+      .select("id").eq("id", actor.service_team_id).eq("is_active", true)
+      .in("slug", ["it-support", "cost-control"]).maybeSingle();
+    if (!team) return { error: "Only IT Support and Cost Control Group providers can manage FAQs." };
+    serviceTeamId = team.id;
+  } else if (actor.user_side !== "admin") {
+    return { error: "Only administrators and IT Support or Cost Control Group providers can manage FAQs." };
   }
 
   const id = value(formData, "faq_id");
   if (!id || !/^\d+$/.test(id)) return { error: "Choose a valid FAQ." };
 
-  const { data, error } = await supabase
-    .from("faq_entries")
-    .delete()
-    .eq("id", Number(id))
-    .select("id")
-    .maybeSingle();
+  let query = supabase.from("faq_entries").delete().eq("id", Number(id));
+  if (serviceTeamId !== null) query = query.eq("service_team_id", serviceTeamId);
+  const { data, error } = await query.select("id").maybeSingle();
   if (error) return { error: `FAQ could not be deleted: ${error.message}` };
   if (!data) return { error: "The FAQ was not found or could not be deleted." };
 

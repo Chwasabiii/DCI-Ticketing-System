@@ -88,7 +88,6 @@ export function RelatedTickets({
                 <span className="mt-0.5 block break-words text-sm font-semibold text-slate-800">{ticket.title}</span>
                 <span className="mt-1 block text-xs capitalize text-slate-500">
                   {String(ticket.status).replaceAll("_", " ")}
-                  {ticket.project?.name ? ` · ${ticket.project.name}` : ""}
                 </span>
               </Link>
               {canManage && (

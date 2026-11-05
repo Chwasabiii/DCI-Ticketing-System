@@ -25,9 +25,6 @@ export async function POST(request: Request) {
   const body = payload as Record<string, unknown>;
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const description = typeof body.description === "string" ? body.description.trim() : "";
-  const projectId = typeof body.projectId === "string" && /^\d+$/.test(body.projectId)
-    ? Number(body.projectId)
-    : null;
 
   if (title.length < 8 || title.length > 200 || description.length > 10000) {
     return NextResponse.json({ tickets: [] }, { headers: noStore });
@@ -35,8 +32,7 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase.rpc("find_similar_open_tickets", {
     p_title: title,
-    p_description: description,
-    p_project_id: projectId
+    p_description: description
   });
   if (error) {
     return NextResponse.json({ error: "Similar tickets could not be checked." }, { status: 503, headers: noStore });

@@ -1,15 +1,14 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type {
-  Category,
   Comment,
-  Discipline,
   EmployeeRole,
   ManagedProfile,
   Notification,
   NotificationPreference,
   Profile,
   ProfileSummary,
+  ServiceTeam,
   RelatedTicket,
   TicketAttachment,
   TicketActivity,
@@ -50,7 +49,7 @@ export async function getCurrentProfile() {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("profiles")
-    .select("*")
+    .select("*, service_team:service_teams(id, name, slug)")
     .eq("id", user.id)
     .maybeSingle<Profile>();
 
@@ -69,11 +68,15 @@ export async function getCurrentRoles() {
     .eq("user_id", user.id)
     .returns<Array<UserRole & { roles: { name: EmployeeRole } | null }>>();
 
-  return (data ?? []).map((row) => ({
-    user_id: row.user_id,
-    role_id: row.role_id,
-    role_name: row.roles?.name
-  }));
+  return (data ?? []).flatMap((row) => {
+    const roleName = row.roles?.name;
+    if (roleName !== "Coordinator" && roleName !== "Personnel" && roleName !== "Manager") return [];
+    return [{
+      user_id: row.user_id,
+      role_id: row.role_id,
+      role_name: roleName
+    }];
+  });
 }
 
 export const getCurrentContext = cache(async function getCurrentContext() {
@@ -94,7 +97,7 @@ export async function getTickets(limit = 50) {
   const { data, error } = await supabase
     .from("tickets")
     .select(
-      "id, ticket_no, title, description, status, priority, request_type, approval_status, approval_comment, reviewed_by, reviewed_at, is_confidential, requester_id, assigned_to, discipline_id, category_id, project_id, due_date, created_at, updated_at, resolved_at, first_response_at, project:projects(name)"
+      "id, ticket_no, title, description, status, priority, request_type, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, updated_at, resolved_at, first_response_at"
     )
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -104,7 +107,19 @@ export async function getTickets(limit = 50) {
   return data ?? [];
 }
 
-const reportTicketSelection = "id, ticket_no, title, status, priority, request_type, approval_status, is_confidential, requester_id, assigned_to, discipline_id, category_id, project_id, due_date, created_at, updated_at, resolved_at, first_response_at, project:projects(name)";
+const reportTicketSelection = "id, ticket_no, title, status, priority, request_type, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, updated_at, resolved_at, first_response_at";
+
+export async function getServiceTeams({ inScopeOnly = false }: { inScopeOnly?: boolean } = {}): Promise<ServiceTeam[]> {
+  const supabase = await createClient();
+  let query = supabase.from("service_teams")
+    .select("id, name, slug, is_in_scope, is_active")
+    .eq("is_active", true)
+    .order("name");
+  if (inScopeOnly) query = query.eq("is_in_scope", true);
+  const { data, error } = await query.returns<ServiceTeam[]>();
+  if (error) throw new Error(`Could not load service teams: ${error.message}`);
+  return data ?? [];
+}
 
 export async function getTicketSlaPolicies(): Promise<TicketSlaPolicy[]> {
   const supabase = await createClient();
@@ -167,7 +182,7 @@ export async function getTicket(id: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("tickets")
-    .select("*, department:departments(name), project:projects(name)")
+    .select("id, ticket_no, title, description, status, priority, is_confidential, request_type, requester_id, assigned_to, service_team_id, resolution_notes, due_date, created_at, resolved_at, first_response_at, updated_at")
     .eq("id", id)
     .single<Ticket>();
 
@@ -201,22 +216,12 @@ export async function getRelatedTickets(ticketId: string): Promise<RelatedTicket
 
   const { data, error } = await supabase
     .from("tickets")
-    .select("id, ticket_no, title, status, priority, project:projects(name)")
+    .select("id, ticket_no, title, status, priority")
     .in("id", relatedIds)
     .order("created_at", { ascending: false })
     .returns<RelatedTicket[]>();
   if (error) throw new Error(`Could not load related tickets: ${error.message}`);
   return data ?? [];
-}
-
-export async function canApproveTicket(id: string) {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("can_approve_project_ticket", {
-    p_ticket_id: Number(id)
-  });
-
-  if (error) throw new Error(`Could not verify project approval access: ${error.message}`);
-  return data === true;
 }
 
 export async function getProfileSummary(id: string, ticketId: string) {
@@ -325,28 +330,6 @@ export async function getTicketAttachments(ticketId: string) {
   );
 }
 
-export async function getDisciplines() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("disciplines")
-    .select("*")
-    .order("name")
-    .returns<Discipline[]>();
-
-  return data ?? [];
-}
-
-export async function getCategories() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("categories")
-    .select("*")
-    .order("name")
-    .returns<Category[]>();
-
-  return data ?? [];
-}
-
 export async function getProfiles() {
   const supabase = await createClient();
   const { data } = await supabase
@@ -362,7 +345,7 @@ export async function getManagedProfiles(): Promise<ManagedProfile[]> {
   const supabase = await createClient();
   const { data: profiles, error: profilesError } = await supabase
     .from("profiles")
-    .select("id, full_name, email, user_side, status, invitation_pending")
+    .select("id, full_name, email, user_side, status, invitation_pending, service_team_id, service_team:service_teams(id, name, slug)")
     .order("full_name")
     .returns<Array<Omit<ManagedProfile, "employee_roles">>>();
 
@@ -379,7 +362,7 @@ export async function getManagedProfiles(): Promise<ManagedProfile[]> {
   const roleMap = new Map<string, EmployeeRole[]>();
   for (const assignment of assignments ?? []) {
     const roleName = assignment.roles?.name;
-    if (!roleName) continue;
+    if (roleName !== "Coordinator" && roleName !== "Personnel" && roleName !== "Manager") continue;
     roleMap.set(assignment.user_id, [...(roleMap.get(assignment.user_id) ?? []), roleName]);
   }
 
@@ -422,15 +405,17 @@ export async function getNotificationPreferences(): Promise<NotificationPreferen
   return (data ?? []) as NotificationPreference[];
 }
 
-export async function getAssignableEmployees() {
+export async function getAssignableEmployees(serviceTeamId?: number | null) {
+  if (serviceTeamId === null) return [];
   const supabase = await createClient();
-  const { data } = await supabase
+  let query = supabase
     .from("profiles")
-    .select("id, full_name, email, user_side, status, department_id, discipline_id")
+    .select("id, full_name, email, user_side, status, service_team_id")
     .eq("user_side", "employee")
     .eq("status", "active")
-    .order("full_name")
-    .returns<Profile[]>();
+    .order("full_name");
+  if (serviceTeamId !== undefined) query = query.eq("service_team_id", serviceTeamId);
+  const { data } = await query.returns<Profile[]>();
 
   return data ?? [];
 }
@@ -440,6 +425,7 @@ export async function getAssignableRoles() {
   const { data } = await supabase
     .from("roles")
     .select("id, name")
+    .in("name", ["Coordinator", "Personnel", "Manager"])
     .order("name")
     .returns<Array<{ id: number; name: EmployeeRole }>>();
 

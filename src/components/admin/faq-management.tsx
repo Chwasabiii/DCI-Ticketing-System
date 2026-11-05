@@ -83,7 +83,7 @@ export function FaqManagement({ entries }: { entries: FaqEntry[] }) {
               maxLength={300}
               disabled={busyId !== null}
               className="min-h-10 rounded-md border border-slate-200 px-3 font-normal focus-ring"
-              placeholder="How do I submit a project request?"
+              placeholder="How do I submit a support request?"
             />
           </label>
           <label className="grid gap-1.5 text-sm font-semibold text-slate-700">

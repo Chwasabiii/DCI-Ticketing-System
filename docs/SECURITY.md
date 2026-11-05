@@ -3,7 +3,7 @@
 ## Application protections
 
 - User-specific rows and ticket data are protected by Supabase Row Level Security. Keep using the session-bound Supabase client for normal reads/writes; only the admin service client may bypass RLS, and server actions verify an active administrator first.
-- Ticket routing and status changes check the employee's role in server actions and in a database trigger/RLS policy, so direct Supabase API calls cannot bypass those field-level role rules. Clients may only close their own resolved tickets through a narrowly scoped database function.
+- Ticket assignment and status changes check the employee's role in server actions and in a database trigger/RLS policy, so direct Supabase API calls cannot bypass those field-level role rules. Clients may only close their own resolved tickets through a narrowly scoped database function. The `20261105_remove_project_and_routing_workflows.sql` migration disables automatic routing and project approvals while retaining legacy records.
 - Client accounts can read their own profile. Ticket pages use scoped functions to return only names for participants on tickets the caller can access.
 - Ticket attachments remain private, are limited to 10 MB each and five per user per ticket, and the bucket allows only common document, image, text, and CSV MIME types. This is not malware scanning; staff should still treat files from users as untrusted.
 - Standard browser response headers reduce MIME sniffing and clickjacking risks. Production responses include HSTS; the hosting platform must still force HTTPS.

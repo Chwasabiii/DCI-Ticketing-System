@@ -12,8 +12,8 @@ export function OnboardingTips({ userId, side, roles }: { userId: string; side: 
   const tips = side === "client"
     ? [{ href: "/tickets/new", label: "Submit a request" }, { href: "/tickets", label: "Track your tickets" }, { href: "/faqs", label: "Browse help articles" }]
     : side === "admin"
-      ? [{ href: "/inbox", label: "Triage tickets" }, { href: "/admin/users", label: "Invite and manage users" }, { href: "/admin/routing", label: "Set up automatic routing" }, { href: "/admin/sla", label: "Configure SLA targets" }]
-      : [{ href: "/inbox", label: "Work from the triage inbox" }, ...(roles.includes("Manager") ? [{ href: "/reports", label: "Review reports" }] : []), ...(roles.includes("Discipline Lead") ? [{ href: "/workload", label: "Check team workload" }] : []), { href: "/faqs", label: "Browse support guidance" }];
+      ? [{ href: "/inbox", label: "Triage tickets" }, { href: "/admin/users", label: "Invite and manage users" }, { href: "/admin/sla", label: "Configure SLA targets" }]
+      : [{ href: "/inbox", label: "Work from the triage inbox" }, ...(roles.includes("Manager") ? [{ href: "/reports", label: "Review reports" }] : []), ...(roles.includes("Coordinator") ? [{ href: "/workload", label: "Check team workload" }] : []), { href: "/faqs", label: "Browse support guidance" }];
 
   useEffect(() => {
     setVisible(localStorage.getItem(storageKey) !== "dismissed");

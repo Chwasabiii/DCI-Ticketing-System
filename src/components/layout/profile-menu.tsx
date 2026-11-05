@@ -17,8 +17,9 @@ export function ProfileMenu({
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const displayRole =
-    profile?.user_side === "employee" ? roles.join(", ") || "Employee" : profile?.user_side;
+  const displayRole = profile?.user_side === "employee"
+    ? `${profile.service_team?.name ?? "Service Provider"}${roles.length ? ` · ${roles.join(", ")}` : ""}`
+    : profile?.user_side === "client" ? "End user" : profile?.user_side === "admin" ? "Admin" : "";
   const displayName = profile?.full_name ?? "PMSG User";
 
   useEffect(() => {

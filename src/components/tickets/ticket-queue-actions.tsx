@@ -50,7 +50,6 @@ export function TicketQueueActions({
     const form = new FormData();
     form.set("ticket_id", String(ticket.id));
     form.set("priority", String(ticket.priority));
-    form.set("discipline_id", String(ticket.discipline_id ?? ""));
     form.set("assigned_to", assignee);
     form.set("due_date", ticket.due_date ?? "");
     form.set("status", String(ticket.status));
@@ -61,7 +60,7 @@ export function TicketQueueActions({
     });
   }
 
-  if ((!canAssign && !canChangeStatus) || ticket.approval_status === "pending" || ticket.approval_status === "rejected") return null;
+  if (!canAssign && !canChangeStatus) return null;
 
   return (
     <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:pl-[4.75rem]">

@@ -35,7 +35,7 @@ export function FaqList({ entries }: { entries: FaqEntry[] }) {
           </p>
           <p className="mt-1 text-sm text-slate-600">
             {entries.length === 0
-              ? "Please contact your project support team for help."
+              ? "Please contact your support team for help."
               : "Try a different keyword or browse all questions."}
           </p>
           {entries.length > 0 && (
