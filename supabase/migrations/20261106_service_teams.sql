@@ -167,8 +167,8 @@ begin
   end if;
 
   only_route_fields :=
-    (to_jsonb(new) - array['priority','assigned_to','due_date','status','resolved_at','updated_at'])
-      = (to_jsonb(old) - array['priority','assigned_to','due_date','status','resolved_at','updated_at']);
+    (to_jsonb(new) - array['priority','impact','urgency','assigned_to','due_date','status','resolved_at','updated_at'])
+      = (to_jsonb(old) - array['priority','impact','urgency','assigned_to','due_date','status','resolved_at','updated_at']);
   if actor_side = 'employee' and actor_team_id = old.service_team_id and can_route
      and only_route_fields and new.status not in ('resolved', 'closed', 'rejected') then
     return new;

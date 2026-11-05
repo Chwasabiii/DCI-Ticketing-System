@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
-import type { Ticket, TicketSlaPolicy } from "@/lib/types";
+import type { Priority, Ticket, TicketImpact, TicketSlaPolicy, TicketUrgency } from "@/lib/types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -34,28 +34,49 @@ export function isTicketOverdue(ticket: { due_date?: string | null; status: stri
   );
 }
 
+export function addBusinessDays(start: number, businessDays: number) {
+  const deadline = new Date(start);
+  let addedDays = 0;
+  while (addedDays < businessDays) {
+    deadline.setUTCDate(deadline.getUTCDate() + 1);
+    const weekday = deadline.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) addedDays += 1;
+  }
+  return deadline.getTime();
+}
+
+export function calculateTicketPriority(impact: TicketImpact, urgency: TicketUrgency): Priority {
+  const matrix: Record<TicketImpact, Record<TicketUrgency, Priority>> = {
+    high: { high: "urgent", medium: "high", low: "medium" },
+    medium: { high: "high", medium: "medium", low: "low" },
+    low: { high: "medium", medium: "low", low: "low" }
+  };
+  return matrix[impact][urgency];
+}
+
 export function getTicketSlaIndicators(ticket: Ticket, policies: TicketSlaPolicy[], now = Date.now()) {
-  const policy = policies.find((item) => item.priority === ticket.priority);
+  const priorityGroup = ticket.priority === "high" || ticket.priority === "urgent" ? "high" : "standard";
+  const policy = policies.find((item) => item.priority_group === priorityGroup);
   if (!policy || !ticket.created_at) return [] as Array<{ key: string; label: string; state: "warning" | "breached" }>;
   const createdAt = Date.parse(ticket.created_at);
   if (!Number.isFinite(createdAt)) return [];
   const indicators: Array<{ key: string; label: string; state: "warning" | "breached" }> = [];
-  const responseDeadline = createdAt + policy.first_response_hours * 3_600_000;
+  const responseDeadline = addBusinessDays(createdAt, policy.first_response_business_days);
   if (ticket.first_response_at) {
     if (Date.parse(ticket.first_response_at) > responseDeadline) indicators.push({ key: "response", label: "Response SLA missed", state: "breached" });
   } else if (now > responseDeadline) {
     indicators.push({ key: "response", label: "Response SLA overdue", state: "breached" });
-  } else if (responseDeadline - now <= Math.max(3_600_000, policy.first_response_hours * 3_600_000 * 0.25)) {
+  } else if (responseDeadline - now <= Math.max(3_600_000, policy.first_response_business_days * 86_400_000 * 0.25)) {
     indicators.push({ key: "response", label: "Response due soon", state: "warning" });
   }
 
-  const resolutionDeadline = createdAt + policy.resolution_hours * 3_600_000;
+  const resolutionDeadline = addBusinessDays(createdAt, policy.resolution_business_days);
   const finalStates = ["closed", "rejected"];
   if (ticket.resolved_at) {
     if (Date.parse(ticket.resolved_at) > resolutionDeadline) indicators.push({ key: "resolution", label: "Resolution SLA missed", state: "breached" });
   } else if (now > resolutionDeadline && !finalStates.includes(ticket.status)) {
     indicators.push({ key: "resolution", label: "Resolution SLA overdue", state: "breached" });
-  } else if (resolutionDeadline - now <= Math.max(3_600_000, policy.resolution_hours * 3_600_000 * 0.25) && !finalStates.includes(ticket.status)) {
+  } else if (resolutionDeadline - now <= Math.max(3_600_000, policy.resolution_business_days * 86_400_000 * 0.25) && !finalStates.includes(ticket.status)) {
     indicators.push({ key: "resolution", label: "Resolution due soon", state: "warning" });
   }
   return indicators;

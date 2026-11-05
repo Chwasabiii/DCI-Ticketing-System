@@ -4,11 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { calculateTicketPriority } from "@/lib/utils";
 import type {
   Comment,
   EmployeeRole,
-  Priority,
+  TicketImpact,
   TicketStatus,
+  TicketUrgency,
   UserSide
 } from "@/lib/types";
 
@@ -516,9 +518,10 @@ export async function createTicket(formData: FormData) {
   const requestedType = value(formData, "request_type") ?? "general";
   const requestTypes = ["general", "access_request", "incident_report"] as const;
   const requestType = requestTypes.find((option) => option === requestedType);
-  const requestedPriority = value(formData, "priority");
-  const priorities: Priority[] = ["low", "medium", "high", "urgent"];
-  const priority = priorities.find((option) => option === requestedPriority) ?? "medium";
+  const impacts: TicketImpact[] = ["low", "medium", "high"];
+  const urgencies: TicketUrgency[] = ["low", "medium", "high"];
+  const impact = impacts.find((option) => option === value(formData, "impact"));
+  const urgency = urgencies.find((option) => option === value(formData, "urgency"));
 
   if (!title || !description) {
     return { error: "Enter a title and details for your request." };
@@ -527,6 +530,8 @@ export async function createTicket(formData: FormData) {
     return { error: "Keep the title to 200 characters and the request details to 10,000 characters or fewer." };
   }
   if (!requestType) return { error: "Choose a valid request type." };
+  if (!impact || !urgency) return { error: "Choose a valid impact and urgency." };
+  const priority = calculateTicketPriority(impact, urgency);
 
   const { data: serviceTeam, error: teamError } = await supabase.from("service_teams")
     .select("id, slug, is_in_scope, is_active")
@@ -546,6 +551,8 @@ export async function createTicket(formData: FormData) {
       requester_id: user.id,
       service_team_id: serviceTeam.id,
       request_type: requestType,
+      impact,
+      urgency,
       is_confidential: formData.get("is_confidential") === "on",
       priority,
       status: "open"
@@ -809,9 +816,11 @@ export async function routeTicket(formData: FormData) {
   }
 
   const ticketId = value(formData, "ticket_id");
-  const requestedPriority = value(formData, "priority");
-  const priorities: Priority[] = ["low", "medium", "high", "urgent"];
-  const priority = priorities.find((option) => option === requestedPriority);
+  const impacts: TicketImpact[] = ["low", "medium", "high"];
+  const urgencies: TicketUrgency[] = ["low", "medium", "high"];
+  const impact = impacts.find((option) => option === value(formData, "impact"));
+  const urgency = urgencies.find((option) => option === value(formData, "urgency"));
+  const priority = impact && urgency ? calculateTicketPriority(impact, urgency) : null;
   const assignedTo = value(formData, "assigned_to");
   const dueDate = value(formData, "due_date") || null;
   const requestedStatus = value(formData, "status");
@@ -827,8 +836,8 @@ export async function routeTicket(formData: FormData) {
   ];
   const status = allowedStatuses.find((option) => option === requestedStatus);
 
-  if (!ticketId || !priority || !status) {
-    return { error: "Choose a valid priority, assignee, and status." };
+  if (!ticketId || !priority || !impact || !urgency || !status) {
+    return { error: "Choose valid impact, urgency, assignee, and status values." };
   }
   if (["resolved", "closed", "rejected"].includes(status)) {
     return { error: "Routing cannot resolve, close, or reject a ticket. Use the ticket status action." };
@@ -862,6 +871,8 @@ export async function routeTicket(formData: FormData) {
     .from("tickets")
     .update({
       priority,
+      impact,
+      urgency,
       assigned_to: assignedTo,
       due_date: dueDate,
       status,
@@ -947,16 +958,16 @@ export async function saveTicketSlaPolicies(formData: FormData) {
   if ("error" in actor) return actor;
   if (actor.profile.user_side !== "admin") return { error: "Only administrators can manage SLA targets." };
 
-  const priorities: Priority[] = ["urgent", "high", "medium", "low"];
-  const policies = priorities.map((priority) => {
-    const response = Number(value(formData, `response_${priority}`));
-    const resolution = Number(value(formData, `resolution_${priority}`));
-    return { priority, first_response_hours: response, resolution_hours: resolution, updated_at: new Date().toISOString() };
+  const priorityGroups = ["high", "standard"] as const;
+  const policies = priorityGroups.map((priority_group) => {
+    const response = Number(value(formData, `response_${priority_group}`));
+    const resolution = Number(value(formData, `resolution_${priority_group}`));
+    return { priority_group, first_response_business_days: response, resolution_business_days: resolution, updated_at: new Date().toISOString() };
   });
-  if (policies.some((policy) => !Number.isInteger(policy.first_response_hours) || policy.first_response_hours < 1 || policy.first_response_hours > 8760 || !Number.isInteger(policy.resolution_hours) || policy.resolution_hours < 1 || policy.resolution_hours > 8760)) {
-    return { error: "Enter whole hour targets between 1 and 8,760 for every priority." };
+  if (policies.some((policy) => !Number.isInteger(policy.first_response_business_days) || policy.first_response_business_days < 1 || policy.first_response_business_days > 365 || !Number.isInteger(policy.resolution_business_days) || policy.resolution_business_days < 1 || policy.resolution_business_days > 365)) {
+    return { error: "Enter whole business-day targets between 1 and 365 for both priority groups." };
   }
-  const { error } = await supabase.from("ticket_sla_policies").upsert(policies, { onConflict: "priority" });
+  const { error } = await supabase.from("ticket_sla_policies").upsert(policies, { onConflict: "priority_group" });
   if (error) return { error: error.message };
   revalidatePath("/admin/sla");
   revalidatePath("/inbox");

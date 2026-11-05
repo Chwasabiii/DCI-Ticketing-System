@@ -9,7 +9,7 @@ This repository contains the web application and a draft Supabase database schem
 The intended ticket workflow is:
 
 1. A client signs in and submits a request with a title, details, and request type.
-2. A coordinator reviews incoming requests, chooses priority, and assigns a staff member.
+2. A coordinator reviews incoming requests, confirms impact and urgency, and assigns a staff member. The priority matrix calculates the priority category.
 3. Staff work on the request and add comments or internal notes.
 4. Staff mark the work resolved; the client can confirm completion and close the ticket.
 5. Managers monitor open, urgent, resolved, and overdue work.
@@ -132,10 +132,10 @@ The matching source file is under `src/app/`. For example, `/tickets/new` is imp
    Run `supabase/migrations/20261026_ticket_duplicate_detection_and_links.sql` to suggest similar visible open tickets and add staff-managed related-ticket links.
    Run `supabase/migrations/20261027_automatic_ticket_routing.sql` only when migrating an older database that needs its original schema history; the removal migration below disables this workflow.
    Run `supabase/migrations/20261028_inbox_productivity_features.sql` to add SLA targets and first-response tracking, plus the staff-only ticket handoff RPC. Saved inbox views are stored in each browser; bulk actions and onboarding tips need no database changes.
-   Run `supabase/migrations/20261029_sla_escalations.sql` to schedule in-app alerts when a high or urgent ticket misses its first-response or resolution SLA. This requires `pg_cron` to be enabled in Supabase; alerts are deduplicated per ticket and SLA type.
+   Run `supabase/migrations/20261029_sla_escalations.sql` to schedule in-app alerts when a ticket misses its first-response or resolution SLA. This requires `pg_cron` to be enabled in Supabase; alerts are deduplicated per ticket and SLA type. The later business-day SLA migration updates the alert job to use the High and Standard priority groups.
    Run `supabase/migrations/20261030_ticket_satisfaction_surveys.sql` to add requester satisfaction surveys after resolution.
    Run `supabase/migrations/20261031_ticket_activity_author_sides.sql` to distinguish requester and staff authors in ticket activity.
-   After all existing migrations through `20261031`, run `supabase/migrations/20261105_remove_project_and_routing_workflows.sql` to disable project approvals and automatic routing while retaining existing database records. Then run `supabase/migrations/20261106_service_teams.sql` to add team assignment and scope tickets to their service team, followed by `20261107_end_users_only_ticket_creation.sql` to reserve ticket submission for end users and `20261108_team_faq_management.sql` to let IT Support and Cost Control Group providers manage their own team's FAQs.
+   After all existing migrations through `20261031`, run `supabase/migrations/20261105_remove_project_and_routing_workflows.sql` to disable project approvals and automatic routing while retaining existing database records. Then run `supabase/migrations/20261106_service_teams.sql` to add team assignment and scope tickets to their service team, followed by `20261107_end_users_only_ticket_creation.sql` to reserve ticket submission for end users, `20261108_team_faq_management.sql` to let IT Support and Cost Control Group providers manage their own team's FAQs, `20261109_business_day_sla_targets.sql` to use High versus Standard SLA policies measured in weekdays, and `20261110_ticket_priority_matrix.sql` to classify priority from ticket impact and urgency.
 3. Create a test user in Supabase Authentication. The project currently has a sign-in page, not a public sign-up page.
 4. For the first administrator, update the new user's profile in the SQL Editor, replacing the email:
 

@@ -97,7 +97,7 @@ export async function getTickets(limit = 50) {
   const { data, error } = await supabase
     .from("tickets")
     .select(
-      "id, ticket_no, title, description, status, priority, request_type, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, updated_at, resolved_at, first_response_at"
+      "id, ticket_no, title, description, status, priority, impact, urgency, request_type, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, updated_at, resolved_at, first_response_at"
     )
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -107,7 +107,7 @@ export async function getTickets(limit = 50) {
   return data ?? [];
 }
 
-const reportTicketSelection = "id, ticket_no, title, status, priority, request_type, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, updated_at, resolved_at, first_response_at";
+const reportTicketSelection = "id, ticket_no, title, status, priority, impact, urgency, request_type, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, updated_at, resolved_at, first_response_at";
 
 export async function getServiceTeams({ inScopeOnly = false }: { inScopeOnly?: boolean } = {}): Promise<ServiceTeam[]> {
   const supabase = await createClient();
@@ -124,8 +124,8 @@ export async function getServiceTeams({ inScopeOnly = false }: { inScopeOnly?: b
 export async function getTicketSlaPolicies(): Promise<TicketSlaPolicy[]> {
   const supabase = await createClient();
   const { data, error } = await supabase.from("ticket_sla_policies")
-    .select("priority, first_response_hours, resolution_hours, updated_at")
-    .order("priority").returns<TicketSlaPolicy[]>();
+    .select("priority_group, first_response_business_days, resolution_business_days, updated_at")
+    .order("priority_group").returns<TicketSlaPolicy[]>();
   if (error) throw new Error(`Could not load ticket SLA policies: ${error.message}`);
   return data ?? [];
 }
@@ -182,7 +182,7 @@ export async function getTicket(id: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("tickets")
-    .select("id, ticket_no, title, description, status, priority, is_confidential, request_type, requester_id, assigned_to, service_team_id, resolution_notes, due_date, created_at, resolved_at, first_response_at, updated_at")
+    .select("id, ticket_no, title, description, status, priority, impact, urgency, is_confidential, request_type, requester_id, assigned_to, service_team_id, resolution_notes, due_date, created_at, resolved_at, first_response_at, updated_at")
     .eq("id", id)
     .single<Ticket>();
 

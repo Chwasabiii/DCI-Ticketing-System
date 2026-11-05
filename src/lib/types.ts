@@ -24,6 +24,8 @@ export type TicketStatus =
   | "rejected";
 
 export type Priority = "low" | "medium" | "high" | "urgent";
+export type TicketImpact = "low" | "medium" | "high";
+export type TicketUrgency = "low" | "medium" | "high";
 
 export type RequestType = "general" | "access_request" | "incident_report";
 
@@ -80,6 +82,8 @@ export type Ticket = {
   description?: string | null;
   status: TicketStatus | string;
   priority: Priority | string;
+  impact?: TicketImpact;
+  urgency?: TicketUrgency;
   is_confidential?: boolean;
   request_type?: RequestType;
   requester_id?: string | null;
@@ -96,9 +100,9 @@ export type Ticket = {
 };
 
 export type TicketSlaPolicy = {
-  priority: Priority;
-  first_response_hours: number;
-  resolution_hours: number;
+  priority_group: "high" | "standard";
+  first_response_business_days: number;
+  resolution_business_days: number;
   updated_at?: string;
 };
 

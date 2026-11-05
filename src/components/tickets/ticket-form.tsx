@@ -6,6 +6,8 @@ import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type For
 import { Paperclip, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
+import { PriorityMatrixGuide } from "@/components/tickets/priority-matrix-guide";
+import { calculateTicketPriority } from "@/lib/utils";
 import { createTicket } from "@/lib/actions";
 import {
   ACCEPTED_TICKET_ATTACHMENT_TYPES,
@@ -13,9 +15,7 @@ import {
   MAX_TICKET_ATTACHMENTS,
   uploadTicketAttachments
 } from "@/lib/attachments";
-import type { Priority, RequestType, SimilarTicket } from "@/lib/types";
-
-const priorities: Priority[] = ["low", "medium", "high", "urgent"];
+import type { RequestType, SimilarTicket, TicketImpact, TicketUrgency } from "@/lib/types";
 
 function fileSizeLabel(size: number) {
   return size >= 1024 * 1024
@@ -31,7 +31,8 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const [failedFiles, setFailedFiles] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedPriority, setSelectedPriority] = useState<Priority>("medium");
+  const [impact, setImpact] = useState<TicketImpact>("medium");
+  const [urgency, setUrgency] = useState<TicketUrgency>("medium");
   const [titleText, setTitleText] = useState("");
   const [descriptionText, setDescriptionText] = useState("");
   const [similarTickets, setSimilarTickets] = useState<SimilarTicket[]>([]);
@@ -40,6 +41,7 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
   const [message, setMessage] = useState<string | null>(null);
   const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const priority = calculateTicketPriority(impact, urgency);
 
   useEffect(() => {
     if (titleText.trim().length < 8) {
@@ -209,27 +211,27 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
         </span>
       </label>
 
-      <div className="grid min-w-0 gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-        <fieldset className="grid content-start gap-2">
-          <legend className="text-sm font-semibold text-slate-700">Priority</legend>
-          <div className="flex gap-2">
-            {priorities.map((priority) => (
-              <label key={priority} className="cursor-pointer">
-                <input
-                  type="radio"
-                  name="priority"
-                  value={priority}
-                  checked={selectedPriority === priority}
-                  onChange={() => setSelectedPriority(priority)}
-                  className="peer sr-only"
-                />
-                <span className="inline-flex min-h-9 items-center rounded-md border border-slate-200 px-3 text-xs font-medium capitalize text-slate-700 peer-checked:border-accent peer-checked:bg-blue-50 peer-checked:text-accent peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent">
-                  {priority}
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+      <div className="grid min-w-0 gap-4 md:grid-cols-2">
+        <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-700">
+          Impact
+          <select name="impact" value={impact} onChange={(event) => setImpact(event.target.value as TicketImpact)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring">
+            <option value="high">High — affects critical service or many users</option>
+            <option value="medium">Medium — disrupts a team or important task</option>
+            <option value="low">Low — limited impact; workaround available</option>
+          </select>
+        </label>
+        <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-700">
+          Urgency
+          <select name="urgency" value={urgency} onChange={(event) => setUrgency(event.target.value as TicketUrgency)} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring">
+            <option value="high">High — needs attention immediately</option>
+            <option value="medium">Medium — needs attention soon</option>
+            <option value="low">Low — can be scheduled</option>
+          </select>
+        </label>
+        <p className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-900 md:col-span-2">
+          Priority matrix result: <strong className="capitalize">{priority}</strong>. Priority is assigned from impact and urgency.
+        </p>
+        <div className="md:col-span-2"><PriorityMatrixGuide /></div>
       </div>
 
       <label className="grid gap-2">

@@ -6,8 +6,10 @@ import { CheckCircle2, Route, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
+import { PriorityMatrixGuide } from "@/components/tickets/priority-matrix-guide";
 import { routeTicket, updateTicketStatus } from "@/lib/actions";
-import type { EmployeeRole, Profile, Ticket, TicketStatus } from "@/lib/types";
+import { calculateTicketPriority } from "@/lib/utils";
+import type { EmployeeRole, Profile, Ticket, TicketImpact, TicketStatus, TicketUrgency } from "@/lib/types";
 
 const ticketStatuses: TicketStatus[] = [
   "open",
@@ -39,6 +41,9 @@ export function TicketActions({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [routingFailed, setRoutingFailed] = useState(false);
   const [statusFailed, setStatusFailed] = useState(false);
+  const [impact, setImpact] = useState<TicketImpact>(ticket.impact ?? "medium");
+  const [urgency, setUrgency] = useState<TicketUrgency>(ticket.urgency ?? "medium");
+  const calculatedPriority = calculateTicketPriority(impact, urgency);
   const canRoute =
     profile.user_side === "admin" ||
     roles.includes("Coordinator");
@@ -142,19 +147,22 @@ export function TicketActions({
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-                Priority
-                <select
-                  name="priority"
-                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
-                  defaultValue={ticket.priority ?? "medium"}
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
-              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
+                  Impact
+                  <select name="impact" value={impact} onChange={(event) => setImpact(event.target.value as TicketImpact)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring">
+                    <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                  </select>
+                </label>
+                <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
+                  Urgency
+                  <select name="urgency" value={urgency} onChange={(event) => setUrgency(event.target.value as TicketUrgency)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring">
+                    <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+                  </select>
+                </label>
+                <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900 sm:col-span-2">Priority matrix result: <strong className="capitalize">{calculatedPriority}</strong></p>
+                <div className="sm:col-span-2"><PriorityMatrixGuide /></div>
+              </div>
               <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
                 Due date
                 <input
