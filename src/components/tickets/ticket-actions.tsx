@@ -6,7 +6,6 @@ import { CheckCircle2, Route, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
-import { TicketCommentForm } from "@/components/tickets/ticket-comment-form";
 import { routeTicket, updateTicketStatus } from "@/lib/actions";
 import type { Discipline, EmployeeRole, Profile, Ticket, TicketStatus } from "@/lib/types";
 
@@ -59,6 +58,10 @@ export function TicketActions({
   const routingStatus = ["open", "under_review"].includes(ticket.status)
     ? "assigned"
     : ticket.status;
+
+  if (!canRoute && !canResolve && !(isClient && ticket.status === "resolved")) {
+    return null;
+  }
 
   async function handleRoute(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -116,9 +119,9 @@ export function TicketActions({
   }
 
   return (
-    <div className="grid gap-4">
+    <div>
       {confirmDialog}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
+      <div className="mt-6 border-t border-slate-100 pt-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-navy">Handle this request</h2>
           <Badge value={ticket.status} />
@@ -247,10 +250,6 @@ export function TicketActions({
           )}
         </div>
       </div>
-      <TicketCommentForm
-        ticketId={String(ticket.id)}
-        allowInternalNotes={!isClient}
-      />
     </div>
   );
 }

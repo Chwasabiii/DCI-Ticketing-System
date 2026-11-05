@@ -151,7 +151,9 @@ export type TicketRoutingRule = {
   is_active: boolean;
 };
 
-export type ProfileSummary = Pick<Profile, "id" | "full_name" | "email">;
+export type ProfileSummary = Pick<Profile, "id" | "full_name" | "email"> & {
+  user_side?: UserSide;
+};
 
 export type Comment = {
   id: string | number;

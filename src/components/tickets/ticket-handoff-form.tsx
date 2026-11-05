@@ -27,7 +27,7 @@ export function TicketHandoffForm({ ticketId, employees }: { ticketId: string; e
     } finally { setBusy(false); }
   }
 
-  return <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
+  return <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_30px_rgba(20,40,75,0.06)] sm:p-6">
     <div className="flex items-start gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-accent"><ArrowRightLeft className="h-5 w-5" /></span><div><h2 className="font-bold text-navy">Hand off ticket</h2><p className="mt-1 text-sm text-slate-600">Reassign it and leave a private summary for the next staff member.</p></div></div>
     <form onSubmit={(event) => void submit(event)} className="mt-4 grid gap-3">
       <input type="hidden" name="ticket_id" value={ticketId} />

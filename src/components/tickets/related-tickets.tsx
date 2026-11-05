@@ -70,17 +70,19 @@ export function RelatedTickets({
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-6">
-      <div className="flex items-center gap-2">
-        <Link2 aria-hidden="true" className="h-5 w-5 text-accent" />
-        <h2 className="text-lg font-bold text-navy">Related tickets</h2>
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_30px_rgba(20,40,75,0.06)] sm:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 text-amber-600"><Link2 aria-hidden="true" className="h-5 w-5" /></span>
+          <div><h2 className="text-base font-bold text-navy">Related tickets</h2><p className="mt-0.5 text-xs text-slate-500">Requests connected to this one</p></div>
+        </div>
+        <span className="rounded-full bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">{tickets.length}</span>
       </div>
-      <p className="mt-1 text-sm text-slate-500">Connect tickets that describe the same issue or depend on one another.</p>
 
       {tickets.length > 0 ? (
-        <ul className="mt-4 divide-y divide-slate-100">
+        <ul className="mt-4 grid gap-2 sm:grid-cols-2">
           {tickets.map((ticket) => (
-            <li key={ticket.id} className="flex items-start justify-between gap-3 py-3 first:pt-0 last:pb-0">
+            <li key={ticket.id} className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3.5 transition-colors hover:border-blue-100 hover:bg-blue-50/40">
               <Link href={`/tickets/${ticket.id}`} className="min-w-0 rounded focus-ring">
                 <span className="block text-xs font-bold text-accent">{ticket.ticket_no ?? `Ticket #${ticket.id}`}</span>
                 <span className="mt-0.5 block break-words text-sm font-semibold text-slate-800">{ticket.title}</span>
@@ -104,7 +106,10 @@ export function RelatedTickets({
           ))}
         </ul>
       ) : (
-        <p className="mt-3 text-sm text-slate-500">No related tickets have been linked.</p>
+        <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center">
+          <p className="text-sm font-medium text-slate-600">No related requests yet</p>
+          <p className="mt-1 text-xs text-slate-500">Link tickets that share an issue or depend on each other.</p>
+        </div>
       )}
 
       {canManage && (

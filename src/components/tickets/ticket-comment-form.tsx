@@ -55,7 +55,7 @@ export function TicketCommentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
+    <form onSubmit={handleSubmit}>
       <input type="hidden" name="ticket_id" value={ticketId} />
       {allowInternalNotes && (
         <label className="mb-3 grid gap-2">
@@ -76,7 +76,8 @@ export function TicketCommentForm({
           required
           maxLength={5000}
           disabled={isSubmitting}
-          className="rounded-xl border border-slate-200 px-3 py-3 text-sm focus-ring"
+          placeholder="Write a message…"
+          className="min-h-28 w-full resize-y rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm leading-6 shadow-sm placeholder:text-slate-400 focus-ring"
         />
       </label>
       {allowInternalNotes && (

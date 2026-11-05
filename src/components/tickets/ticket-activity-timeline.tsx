@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -15,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
 import type { TicketActivity } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import { TicketCommentForm } from "@/components/tickets/ticket-comment-form";
 
 type RealtimeStatus = "connecting" | "live" | "unavailable";
 
@@ -68,10 +70,16 @@ function EventIcon({ eventType }: { eventType: string }) {
 
 export function TicketActivityTimeline({
   ticketId,
-  initialActivity
+  initialActivity,
+  currentUserId,
+  allowInternalNotes,
+  actions
 }: {
   ticketId: string;
   initialActivity: TicketActivity[];
+  currentUserId: string;
+  allowInternalNotes: boolean;
+  actions: ReactNode;
 }) {
   const router = useRouter();
   const [activity, setActivity] = useState(initialActivity);
@@ -121,17 +129,25 @@ export function TicketActivityTimeline({
   }, [router, ticketId]);
 
   return (
-    <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-navy">Activity</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Comments, decisions, and ticket updates in order.
-          </p>
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(20,40,75,0.06)]">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 via-white to-blue-50/60 px-5 py-4 sm:px-6">
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-100/80 text-accent">
+            <MessageSquare className="h-5 w-5" />
+          </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-bold text-navy">Conversation</h2>
+              <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">
+                {activity.length} {activity.length === 1 ? "update" : "updates"}
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs text-slate-500">Messages and ticket updates in order</p>
+          </div>
         </div>
         <p
           aria-live="polite"
-          className="flex shrink-0 items-center gap-2 text-xs text-slate-500"
+          className="flex shrink-0 items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-medium text-slate-500 ring-1 ring-slate-200/80"
         >
           <span
             className={`h-2 w-2 rounded-full ${
@@ -151,22 +167,33 @@ export function TicketActivityTimeline({
       </div>
 
       {activity.length === 0 ? (
-        <p className="mt-6 text-sm text-slate-500">No activity has been recorded yet.</p>
+        <div className="mx-5 mt-5 flex min-h-32 flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 text-center sm:mx-6">
+          <span className="grid h-9 w-9 place-items-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200">
+            <MessageSquare className="h-4 w-4" />
+          </span>
+          <p className="mt-2 text-sm font-semibold text-slate-700">Start the conversation</p>
+          <p className="mt-1 text-xs text-slate-500">Send a message here to keep everyone updated.</p>
+        </div>
       ) : (
-        <ol className="mt-6">
+        <ol className="px-5 pt-5 sm:px-6">
           {activity.map((item, index) => {
-            const actorName = item.actor?.full_name ?? "Support team";
+            const isOwnComment = item.kind === "comment" && item.actor?.id === currentUserId;
+            const actorName = isOwnComment
+              ? "You"
+              : item.actor?.full_name ?? (item.actor?.user_side === "client" ? "Client" : "Support team");
+            const isClientComment = item.kind === "comment" && item.actor?.user_side === "client";
+            const alignRight = isOwnComment;
             const isLast = index === activity.length - 1;
 
             return (
               <li
                 key={`${item.kind}:${item.id}`}
-                className="relative flex gap-3 pb-6 last:pb-0 sm:gap-4"
+                className={`relative flex gap-3 pb-6 last:pb-0 sm:gap-4 ${alignRight ? "flex-row-reverse" : ""}`}
               >
                 {!isLast && (
                   <span
                     aria-hidden="true"
-                    className="absolute bottom-0 left-[15px] top-8 w-px bg-slate-200"
+                    className={`absolute bottom-0 top-8 w-px bg-slate-200 ${alignRight ? "right-[15px]" : "left-[15px]"}`}
                   />
                 )}
                 <span
@@ -185,8 +212,8 @@ export function TicketActivityTimeline({
                   )}
                 </span>
 
-                <div className="min-w-0 flex-1 pt-0.5">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <div className={`min-w-0 flex-1 pt-0.5 ${alignRight ? "text-right" : ""}`}>
+                  <div className={`flex flex-wrap items-center gap-x-2 gap-y-1 ${alignRight ? "justify-end" : ""}`}>
                     <p className="text-sm font-semibold text-slate-800">{actorName}</p>
                     {item.kind === "comment" && item.is_internal && (
                       <Badge value="internal note" />
@@ -202,8 +229,8 @@ export function TicketActivityTimeline({
                     )}
                   </div>
                   {item.kind === "comment" ? (
-                    <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50/70 p-3.5">
-                      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                    <div className={`mt-2 w-fit max-w-[92%] rounded-2xl border px-4 py-3.5 shadow-sm ${alignRight ? "ml-auto" : ""} ${isClientComment ? "border-blue-100 bg-blue-50/70" : "border-slate-100 bg-slate-50/70"}`}>
+                      <p className="whitespace-pre-wrap text-left text-sm leading-6 text-slate-700">
                         {item.body}
                       </p>
                     </div>
@@ -218,6 +245,10 @@ export function TicketActivityTimeline({
           })}
         </ol>
       )}
+      <div className="mt-5 border-t border-slate-100 bg-slate-50/50 px-5 py-5 sm:px-6">
+        <TicketCommentForm ticketId={ticketId} allowInternalNotes={allowInternalNotes} />
+      </div>
+      {actions}
     </section>
   );
 }

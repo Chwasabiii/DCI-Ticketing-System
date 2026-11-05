@@ -37,7 +37,7 @@ export function TicketSatisfactionSurvey({
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-6">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_30px_rgba(20,40,75,0.06)] sm:p-6">
       <p className="text-xs font-bold uppercase tracking-[0.12em] text-accent">Your feedback</p>
       <h2 className="mt-1 text-lg font-bold text-navy">How was your support experience?</h2>
       <p className="mt-1 text-sm text-slate-600">Your rating helps us improve our support.</p>

@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { MapPin, Search, Users } from "lucide-react";
+import { ChevronDown, MapPin, Search, Users } from "lucide-react";
 import { createProject, setProjectApprovers, updateProjectStatus } from "@/lib/actions";
 import { Badge } from "@/components/ui/badge";
 import type { Profile, Project, ProjectStatus } from "@/lib/types";
@@ -20,6 +20,7 @@ export function ProjectManagement({
   const [submitting, setSubmitting] = useState(false);
   const [updatingProjectId, setUpdatingProjectId] = useState<string | null>(null);
   const [updatingApproverProjectId, setUpdatingApproverProjectId] = useState<string | null>(null);
+  const [openApproverProjectId, setOpenApproverProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -233,7 +234,7 @@ export function ProjectManagement({
             <p className="mt-1 text-sm text-slate-600">Try a different search or status filter.</p>
           </div>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid items-start gap-4 lg:grid-cols-2">
             {filteredProjects.map((project) => {
               const pm = people.find((person) => person.id === project.pm_user_id);
               const projectApprovers = people.filter((person) =>
@@ -244,11 +245,11 @@ export function ProjectManagement({
               return (
                 <article
                   key={project.id}
-                  className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-soft"
+                  className="relative overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-soft"
                 >
                   <div className="p-5">
                     <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
+                      <div className="relative z-20 min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           {project.project_code && (
                             <span className="rounded bg-slate-100 px-2 py-1 font-mono text-xs font-semibold text-slate-600">
@@ -324,62 +325,76 @@ export function ProjectManagement({
                         </button>
                       </form>
 
-                      <details className="group min-w-0">
-                        <summary className="min-h-9 cursor-pointer list-none rounded-md border border-slate-200 px-3 py-2 text-center text-xs font-semibold text-slate-700 hover:bg-slate-50 focus-ring">
-                          Manage approvers
-                        </summary>
-                        <form
-                          onSubmit={(event) => handleApproverUpdate(event, String(project.id))}
-                          className="mt-3 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3"
+                      <div className="min-w-0">
+                        <button
+                          type="button"
+                          aria-expanded={openApproverProjectId === String(project.id)}
+                          aria-controls={`approvers-${project.id}`}
+                          onClick={() => setOpenApproverProjectId((current) => current === String(project.id) ? null : String(project.id))}
+                          className="flex min-h-9 w-full items-center justify-center gap-2 rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50/60 focus-ring"
                         >
-                          <input type="hidden" name="project_id" value={project.id} />
-                          <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-                            Project PM
-                            <select
-                              name="pm_user_id"
-                              defaultValue={project.pm_user_id ?? ""}
-                              disabled={updatingApproverProjectId !== null}
-                              className="min-h-9 rounded-md border border-slate-200 px-2 text-sm font-normal focus-ring"
-                            >
-                              <option value="">No PM</option>
-                              {people.map((person) => (
-                                <option key={person.id} value={person.id}>
-                                  {person.full_name ?? person.email ?? person.id}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                          <fieldset className="grid gap-1.5">
-                            <legend className="text-xs font-semibold text-slate-700">Other approvers</legend>
-                            <div className="max-h-36 overflow-y-auto rounded-md border border-slate-200 p-2">
-                              {people.length === 0 ? (
-                                <p className="text-xs text-slate-500">No active accounts available.</p>
-                              ) : (
-                                people.map((person) => (
-                                  <label key={person.id} className="flex items-center gap-2 py-1.5 text-xs text-slate-700">
-                                    <input
-                                      type="checkbox"
-                                      name="approvers"
-                                      value={person.id}
-                                      defaultChecked={project.approver_ids?.includes(person.id)}
-                                      disabled={updatingApproverProjectId !== null}
-                                      className="rounded border-slate-300 text-accent focus:ring-accent"
-                                    />
-                                    <span>{person.full_name ?? person.email ?? person.id}</span>
-                                  </label>
-                                ))
-                              )}
-                            </div>
-                          </fieldset>
-                          <button
-                            type="submit"
-                            disabled={updatingApproverProjectId !== null}
-                            className="focus-ring min-h-9 rounded-md bg-navy px-3 text-xs font-semibold text-white hover:bg-[#163b68] disabled:opacity-60"
+                          Manage approvers
+                          <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 transition-transform duration-200 ${openApproverProjectId === String(project.id) ? "rotate-180" : ""}`} />
+                        </button>
+                        <div
+                          id={`approvers-${project.id}`}
+                          aria-hidden={openApproverProjectId !== String(project.id)}
+                          inert={openApproverProjectId !== String(project.id)}
+                          className={`absolute right-0 top-full z-30 mt-2 w-[min(22rem,calc(100vw-3rem))] origin-top-right transition-[opacity,transform,visibility] duration-200 ease-out motion-reduce:transition-none ${openApproverProjectId === String(project.id) ? "visible translate-y-0 scale-100 opacity-100" : "invisible -translate-y-1 scale-[0.98] opacity-0"}`}
+                        >
+                          <form
+                            onSubmit={(event) => handleApproverUpdate(event, String(project.id))}
+                            className="grid max-h-[min(70vh,32rem)] gap-3 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-900/15"
                           >
-                            {updatingApproverProjectId === String(project.id) ? "Saving..." : "Save approvers"}
-                          </button>
-                        </form>
-                      </details>
+                            <input type="hidden" name="project_id" value={project.id} />
+                            <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
+                              Project PM
+                              <select
+                                name="pm_user_id"
+                                defaultValue={project.pm_user_id ?? ""}
+                                disabled={updatingApproverProjectId !== null}
+                                className="min-h-9 rounded-md border border-slate-200 px-2 text-sm font-normal focus-ring"
+                              >
+                                <option value="">No PM</option>
+                                {people.map((person) => (
+                                  <option key={person.id} value={person.id}>
+                                    {person.full_name ?? person.email ?? person.id}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <fieldset className="grid gap-1.5">
+                              <legend className="text-xs font-semibold text-slate-700">Other approvers</legend>
+                              <div className="max-h-36 overflow-y-auto rounded-md border border-slate-200 p-2">
+                                {people.length === 0 ? (
+                                  <p className="text-xs text-slate-500">No active accounts available.</p>
+                                ) : (
+                                  people.map((person) => (
+                                    <label key={person.id} className="flex items-center gap-2 py-1.5 text-xs text-slate-700">
+                                      <input
+                                        type="checkbox"
+                                        name="approvers"
+                                        value={person.id}
+                                        defaultChecked={project.approver_ids?.includes(person.id)}
+                                        disabled={updatingApproverProjectId !== null}
+                                        className="rounded border-slate-300 text-accent focus:ring-accent"
+                                      />
+                                      <span>{person.full_name ?? person.email ?? person.id}</span>
+                                    </label>
+                                  ))
+                                )}
+                              </div>
+                            </fieldset>
+                            <button
+                              type="submit"
+                              disabled={updatingApproverProjectId !== null}
+                              className="focus-ring min-h-9 rounded-md bg-navy px-3 text-xs font-semibold text-white hover:bg-[#163b68] disabled:opacity-60"
+                            >
+                              {updatingApproverProjectId === String(project.id) ? "Saving..." : "Save approvers"}
+                            </button>
+                          </form>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </article>
