@@ -1,0 +1,5 @@
+[build.environment]
+  # NEXT_PUBLIC_* values are intentionally inlined into the client bundle by Next.js.
+  # The Supabase anon key is a public key (access is enforced by Row Level Security),
+  # so it is expected to appear in build output. Never add SUPABASE_SERVICE_ROLE_KEY here.
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_SUPABASE_ANON_KEY,NEXT_PUBLIC_SUPABASE_URL"
