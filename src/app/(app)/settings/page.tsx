@@ -1,13 +1,15 @@
 import { Bell, Building2, CircleUserRound, Settings, ShieldCheck } from "lucide-react";
-import { getCurrentContext, getNotificationPreferences } from "@/lib/data";
+import { getCcgBusinessHolidays, getCurrentContext, getNotificationPreferences } from "@/lib/data";
 import { NotificationPreferences } from "@/components/layout/notification-preferences";
 import { ProfileSecurityForm } from "@/components/layout/profile-security-form";
+import { CcgBusinessHolidayCalendar } from "@/components/layout/ccg-business-holiday-calendar";
 
 export default async function SettingsPage() {
   const [{ profile, roleNames }, preferences] = await Promise.all([
     getCurrentContext(),
     getNotificationPreferences()
   ]);
+  const holidays = profile?.user_side === "admin" ? await getCcgBusinessHolidays() : [];
   const displayName = profile?.full_name ?? profile?.email ?? "PMSG user";
   const accountType = profile?.user_side === "client" ? "End user" : profile?.user_side === "employee" ? "Service provider" : "Administrator";
 
@@ -42,6 +44,7 @@ export default async function SettingsPage() {
 
       {profile && <ProfileSecurityForm fullName={profile.full_name ?? ""} nameChangeUsed={profile.full_name_change_used ?? false} />}
       <NotificationPreferences initial={preferences} />
+      {profile?.user_side === "admin" && <CcgBusinessHolidayCalendar holidays={holidays} />}
     </div>
   );
 }

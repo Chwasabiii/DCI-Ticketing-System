@@ -31,6 +31,9 @@ export type RequestType = "service_request" | "access_request" | "incident_repor
 export type ServiceCategory = "hardware" | "software" | "network" | "microsoft" | "security" | "other_services";
 export type CcgRequestType = "unit_rate" | "vendor_list" | "tor_contracts";
 export type CcgRequestScope = "whole_boq" | "per_material";
+export type CcgDatabaseResult = "available" | "unavailable" | "not_required";
+export type CcgFollowupType = "vendor_quote" | "vendor_search";
+export type CcgFollowupStatus = "pending" | "completed" | "vendor_unresponsive" | "unsuitable";
 
 export type FaqEntry = {
   id: number;
@@ -99,6 +102,16 @@ export type Ticket = {
   ccg_request_type?: CcgRequestType | null;
   ccg_request_scope?: CcgRequestScope | null;
   ccg_procurement_in_scope?: boolean | null;
+  ccg_database_result?: CcgDatabaseResult | null;
+  ccg_followup_type?: CcgFollowupType | null;
+  ccg_followup_status?: CcgFollowupStatus | null;
+  ccg_stage_due_at?: string | null;
+  ccg_vendor_expected_at?: string | null;
+  ccg_vendor_due_at?: string | null;
+  ccg_vendor_wait_started_at?: string | null;
+  ccg_vendor_wait_seconds?: number;
+  ccg_requester_wait_started_at?: string | null;
+  ccg_requester_wait_seconds?: number;
   requester_id?: string | null;
   assigned_to?: string | null;
   service_team_id?: number | null;
@@ -119,6 +132,11 @@ export type TicketSlaPolicy = {
   first_response_business_days: number;
   resolution_business_days: number;
   updated_at?: string;
+};
+
+export type BusinessHoliday = {
+  holiday_date: string;
+  name: string;
 };
 
 export type TicketFeedback = {

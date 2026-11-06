@@ -2,14 +2,24 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { deleteFaq, saveFaq } from "@/lib/actions";
+import { BookOpen, LoaderCircle, Sparkles } from "lucide-react";
+import { createFaqDraftFromTicket, deleteFaq, saveFaq } from "@/lib/actions";
 import type { FaqEntry } from "@/lib/types";
 
-export function FaqManagement({ entries }: { entries: FaqEntry[] }) {
+type ResolvedTicket = {
+  id: number;
+  ticket_no: string | null;
+  title: string;
+  resolution_notes: string;
+  resolved_at: string | null;
+};
+
+export function FaqManagement({ entries, resolvedTickets }: { entries: FaqEntry[]; resolvedTickets: ResolvedTicket[] }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draftingTicketId, setDraftingTicketId] = useState<number | null>(null);
 
   async function handleSave(event: FormEvent<HTMLFormElement>, id: string) {
     event.preventDefault();
@@ -55,6 +65,28 @@ export function FaqManagement({ entries }: { entries: FaqEntry[] }) {
       setError("The FAQ could not be deleted. Please try again.");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function handleCreateDraft(ticketId: number) {
+    if (busyId !== null || draftingTicketId !== null) return;
+    setDraftingTicketId(ticketId);
+    setMessage(null);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.set("ticket_id", String(ticketId));
+      const result = await createFaqDraftFromTicket(formData);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      setMessage(result.success ?? "FAQ draft created. Review it before publishing.");
+      router.refresh();
+    } catch {
+      setError("The FAQ draft could not be created. Please try again.");
+    } finally {
+      setDraftingTicketId(null);
     }
   }
 
@@ -126,6 +158,40 @@ export function FaqManagement({ entries }: { entries: FaqEntry[] }) {
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="overflow-hidden rounded-xl border border-blue-100 bg-white shadow-soft">
+        <div className="flex items-start gap-3 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4 sm:px-6">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-accent shadow-sm ring-1 ring-blue-100"><Sparkles className="h-5 w-5" /></span>
+          <div>
+            <h2 className="text-lg font-bold text-navy">Turn resolved tickets into FAQ articles</h2>
+            <p className="mt-1 text-sm leading-5 text-slate-600">Create an unpublished draft from a completed solution. Review the wording and publish it when it is ready.</p>
+          </div>
+        </div>
+        {resolvedTickets.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-slate-500 sm:px-6">No eligible resolved tickets are waiting for an FAQ draft.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {resolvedTickets.map((ticket) => (
+              <li key={ticket.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div className="min-w-0">
+                  <p className="font-mono text-[11px] font-semibold text-accent">{ticket.ticket_no ?? `Ticket #${ticket.id}`}</p>
+                  <h3 className="mt-1 truncate text-sm font-semibold text-navy">{ticket.title}</h3>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{ticket.resolution_notes}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleCreateDraft(ticket.id)}
+                  disabled={busyId !== null || draftingTicketId !== null}
+                  className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-navy px-4 text-sm font-semibold text-white transition hover:bg-[#163b68] disabled:opacity-60"
+                >
+                  {draftingTicketId === ticket.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <BookOpen className="h-4 w-4" />}
+                  {draftingTicketId === ticket.id ? "Creating draft…" : "Create FAQ draft"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section className="space-y-3">

@@ -69,6 +69,15 @@ async function getActiveTicketActor(supabase: Awaited<ReturnType<typeof createCl
   return { profile, roles } as const;
 }
 
+async function hasCcgWorkflowRole(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const { data, error } = await supabase.from("user_roles").select("roles(name)").eq("user_id", userId);
+  if (error) return false;
+  return (data ?? []).some((assignment) => {
+    const roleName = (assignment.roles as { name?: string } | null)?.name;
+    return roleName === "Personnel" || roleName === "Coordinator";
+  });
+}
+
 async function isItSupportProvider(supabase: Awaited<ReturnType<typeof createClient>>, actor: { user_side: UserSide; service_team_id?: number | null }) {
   if (actor.user_side !== "employee" || !actor.service_team_id) return false;
   const { data } = await supabase.from("service_teams").select("id")
@@ -85,7 +94,7 @@ export async function signIn(_: unknown, formData: FormData) {
   }
 
   const supabase = await createClient();
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) return { error: error.message };
 
@@ -613,7 +622,9 @@ export async function createTicket(formData: FormData) {
       reported_impact: impact,
       reported_urgency: urgency,
       priority_reviewed_at: needsPriorityReview ? null : new Date().toISOString(),
-      is_confidential: formData.get("is_confidential") === "on",
+      // Confidentiality is no longer a ticket creation option. Keep the database
+      // access guards in place for any legacy confidential tickets.
+      is_confidential: false,
       priority,
       status: "open"
     })
@@ -860,7 +871,7 @@ export async function updateTicketStatus(formData: FormData) {
 
   const { data: ticketForResolution, error: ticketForResolutionError } = await supabase
     .from("tickets")
-    .select("request_type, service_team_id, is_confidential, assigned_to, ccg_request_type, ccg_request_scope")
+    .select("request_type, service_team_id, is_confidential, assigned_to, status, ccg_request_type, ccg_request_scope, ccg_database_result, ccg_followup_type, ccg_followup_status")
     .eq("id", ticketId)
     .maybeSingle();
   if (ticketForResolutionError) return { error: ticketForResolutionError.message };
@@ -872,23 +883,65 @@ export async function updateTicketStatus(formData: FormData) {
   ) {
     return { error: "You can only update tickets assigned to your service team. Confidential tickets require you to be the assignee." };
   }
-  let resolutionNotes = value(formData, "resolution_notes");
-  const ccgDatabaseResult = value(formData, "ccg_database_result");
-  if (status === "resolved" && ticketForResolution.ccg_request_type && !resolutionNotes?.trim()) {
-    return { error: "Record the database result and the CCG response in the resolution summary before submitting it." };
-  }
-  if (status === "resolved" && ticketForResolution.ccg_request_type && !(ticketForResolution.ccg_request_type === "unit_rate" && ticketForResolution.ccg_request_scope === "whole_boq")) {
-    if (ccgDatabaseResult !== "available" && ccgDatabaseResult !== "unavailable") {
-      return { error: "Choose whether the requested item was available in the database." };
+  const resolutionNotes = value(formData, "resolution_notes");
+  let ccgDatabaseResult = ticketForResolution.ccg_database_result;
+  let ccgFollowupType = ticketForResolution.ccg_followup_type;
+  let ccgFollowupStatus = ticketForResolution.ccg_followup_status;
+  if (ticketForResolution.ccg_request_type && ticketForResolution.status === "under_review" && ["in_progress", "resolved"].includes(status)) {
+    if (ticketForResolution.ccg_request_type === "unit_rate" && ticketForResolution.ccg_request_scope === "whole_boq") {
+      ccgDatabaseResult = "not_required";
+    } else {
+      const selectedResult = value(formData, "ccg_database_result");
+      if (selectedResult !== "available" && selectedResult !== "unavailable") {
+        return { error: "Record the relevant database check before continuing this CCG request." };
+      }
+      ccgDatabaseResult = selectedResult;
     }
-    const cleanNotes = (resolutionNotes ?? "").replace(/(?:\r?\n)?Database check: (?:available|not available) in the CCG database\.?/gi, "").trim();
-    resolutionNotes = `${cleanNotes}${cleanNotes ? "\n\n" : ""}Database check: ${ccgDatabaseResult === "available" ? "available" : "not available"} in the CCG database.`;
+    const needsVendorQuote = ccgDatabaseResult === "unavailable" && ticketForResolution.ccg_request_type === "unit_rate";
+    const needsVendorSearch = ccgDatabaseResult === "unavailable" && ticketForResolution.ccg_request_type === "vendor_list";
+    if (needsVendorQuote || needsVendorSearch) {
+      if (status === "resolved") return { error: "Start the vendor quote or search before submitting the final response." };
+      const expectedType = needsVendorQuote ? "vendor_quote" : "vendor_search";
+      const existingFollowupStillApplies = ticketForResolution.ccg_followup_type === expectedType
+        && ticketForResolution.ccg_database_result === ccgDatabaseResult;
+      ccgFollowupType = expectedType;
+      ccgFollowupStatus = existingFollowupStillApplies ? ticketForResolution.ccg_followup_status : "pending";
+    } else {
+      ccgFollowupType = null;
+      ccgFollowupStatus = null;
+    }
+  } else if (ticketForResolution.ccg_request_type && ticketForResolution.status === "in_progress" && ticketForResolution.ccg_followup_type) {
+    const selectedFollowup = value(formData, "ccg_followup_status");
+    if (selectedFollowup) {
+      if (!["pending", "completed", "vendor_unresponsive", "unsuitable"].includes(selectedFollowup)) {
+        return { error: "Choose a valid vendor follow-up result." };
+      }
+      ccgFollowupStatus = selectedFollowup as typeof ccgFollowupStatus;
+    }
+    if (status === "resolved" && (!ccgFollowupStatus || ccgFollowupStatus === "pending")) {
+      return { error: "Complete the vendor follow-up or record why the vendor could not provide a suitable response." };
+    }
+  }
+  if (status === "resolved" && ticketForResolution.ccg_request_type && !resolutionNotes?.trim()) {
+    return { error: "Record the CCG response in the resolution summary before submitting it." };
   }
   if (status === "resolved" && ticketForResolution.request_type === "incident_report" && !resolutionNotes) {
     return { error: "Document the root cause and resolution before completing an incident report." };
   }
 
-  const update: { status: TicketStatus; resolution_notes?: string; resolved_at?: string | null } = { status };
+  const update: {
+    status: TicketStatus;
+    resolution_notes?: string;
+    resolved_at?: string | null;
+    ccg_database_result?: string | null;
+    ccg_followup_type?: string | null;
+    ccg_followup_status?: string | null;
+  } = { status };
+  if (ticketForResolution.ccg_request_type) {
+    update.ccg_database_result = ccgDatabaseResult;
+    update.ccg_followup_type = ccgFollowupType;
+    update.ccg_followup_status = ccgFollowupStatus;
+  }
   if (status === "resolved") update.resolved_at = new Date().toISOString();
   else update.resolved_at = null;
   if (resolutionNotes) {
@@ -1061,7 +1114,7 @@ export async function routeTicket(formData: FormData) {
   }
 
   const { data: currentTicket, error: ticketError } = await supabase.from("tickets")
-    .select("service_team_id").eq("id", ticketId).maybeSingle();
+    .select("service_team_id, ccg_request_type").eq("id", ticketId).maybeSingle();
   if (ticketError) return { error: ticketError.message };
   if (!currentTicket) return { error: "You cannot access this ticket." };
   if (actor.profile.user_side === "employee" && actor.profile.service_team_id !== currentTicket.service_team_id) {
@@ -1079,6 +1132,9 @@ export async function routeTicket(formData: FormData) {
       .maybeSingle();
 
     if (!assignee) return { error: "Choose an active employee as the assignee." };
+    if (currentTicket.ccg_request_type && !(await hasCcgWorkflowRole(supabase, assignedTo))) {
+      return { error: "Choose an active CCG Personnel member or Coordinator for this request." };
+    }
   }
 
   const { data, error } = await supabase
@@ -1162,7 +1218,7 @@ export async function bulkUpdateTickets(formData: FormData) {
     const assigneeId = value(formData, "assigned_to");
     if (assigneeId) {
       const { data: currentTickets, error: ticketsError } = await supabase.from("tickets")
-        .select("id, service_team_id").in("id", ids);
+        .select("id, service_team_id, ccg_request_type").in("id", ids);
       if (ticketsError) return { error: ticketsError.message };
       if ((currentTickets ?? []).length !== ids.length) return { error: "Some selected tickets are unavailable to you." };
       const teamIds = new Set((currentTickets ?? []).map((ticket) => ticket.service_team_id));
@@ -1175,6 +1231,9 @@ export async function bulkUpdateTickets(formData: FormData) {
         .eq("id", assigneeId).eq("user_side", "employee").eq("status", "active")
         .eq("service_team_id", serviceTeamId).maybeSingle();
       if (!assignee) return { error: "Choose an active employee as the assignee." };
+      if ((currentTickets ?? []).some((ticket) => ticket.ccg_request_type) && !(await hasCcgWorkflowRole(supabase, assigneeId))) {
+        return { error: "CCG tickets can only be assigned to CCG Personnel or Coordinators." };
+      }
     }
     patch.assigned_to = assigneeId;
   } else if (operation === "status") {
@@ -1221,6 +1280,40 @@ export async function saveTicketSlaPolicies(formData: FormData) {
   revalidatePath("/admin/sla");
   revalidatePath("/inbox");
   return { success: "SLA targets saved." };
+}
+
+export async function saveCcgBusinessHoliday(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to manage holidays." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if (actor.error) return { error: actor.error };
+  if (actor.profile.user_side !== "admin") return { error: "Only administrators can manage holidays." };
+  const holidayDate = value(formData, "holiday_date");
+  const name = value(formData, "name");
+  const parsedHolidayDate = holidayDate && /^\d{4}-\d{2}-\d{2}$/.test(holidayDate) ? new Date(`${holidayDate}T00:00:00Z`) : null;
+  if (!parsedHolidayDate || !Number.isFinite(parsedHolidayDate.getTime()) || parsedHolidayDate.toISOString().slice(0, 10) !== holidayDate || !name || name.length > 120) {
+    return { error: "Enter a valid holiday date and a name up to 120 characters." };
+  }
+  const { error } = await supabase.from("ccg_business_holidays").upsert({ holiday_date: holidayDate, name }, { onConflict: "holiday_date" });
+  if (error) return { error: `Holiday could not be saved: ${error.message}` };
+  revalidatePath("/settings");
+  return { success: "Holiday saved." };
+}
+
+export async function deleteCcgBusinessHoliday(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to manage holidays." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if (actor.error) return { error: actor.error };
+  if (actor.profile.user_side !== "admin") return { error: "Only administrators can manage holidays." };
+  const holidayDate = value(formData, "holiday_date");
+  if (!holidayDate || !/^\d{4}-\d{2}-\d{2}$/.test(holidayDate)) return { error: "Choose a valid holiday." };
+  const { error } = await supabase.from("ccg_business_holidays").delete().eq("holiday_date", holidayDate);
+  if (error) return { error: `Holiday could not be deleted: ${error.message}` };
+  revalidatePath("/settings");
+  return { success: "Holiday removed." };
 }
 
 export async function handoffTicket(formData: FormData) {

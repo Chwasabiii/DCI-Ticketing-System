@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { AlertCircle, ArrowUpRight, ChevronLeft, ChevronRight, LockKeyhole, Ticket as TicketIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { Ticket } from "@/lib/types";
-import { formatDate, getTicketSlaIndicators, isTicketOverdue, needsTicketPriorityReview } from "@/lib/utils";
+import { formatDate, getCcgDeadlineIndicators, getTicketSlaIndicators, isTicketOverdue, needsTicketPriorityReview } from "@/lib/utils";
 import { TicketQueueActions } from "@/components/tickets/ticket-queue-actions";
 import type { Profile, TicketSlaPolicy } from "@/lib/types";
 
@@ -147,7 +147,7 @@ export function TicketTable({
                       Next: {nextActions[String(ticket.id)]}
                     </span>
                   )}
-                  {slaPolicies.length > 0 && <span className="mt-2 flex flex-wrap gap-1.5">{getTicketSlaIndicators(ticket, slaPolicies).map((indicator) => <span key={indicator.key} className={`inline-flex rounded-md px-2 py-1 text-[10px] font-bold ${indicator.state === "breached" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-800"}`}>{indicator.label}</span>)}</span>}
+                  {(slaPolicies.length > 0 || ticket.ccg_request_type) && <span className="mt-2 flex flex-wrap gap-1.5">{[...getTicketSlaIndicators(ticket, slaPolicies), ...getCcgDeadlineIndicators(ticket)].map((indicator) => <span key={indicator.key} className={`inline-flex rounded-md px-2 py-1 text-[10px] font-bold ${indicator.state === "breached" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-800"}`}>{indicator.label}</span>)}</span>}
                 </span>
               </div>
               <span className="flex items-center justify-between gap-3 pl-[3.25rem] sm:justify-end sm:pl-0">

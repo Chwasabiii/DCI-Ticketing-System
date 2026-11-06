@@ -23,6 +23,28 @@ export default async function AdminFaqsPage() {
 
   if (error) throw new Error(`Could not load FAQs: ${error.message}`);
 
+  let resolvedQuery = supabase
+    .from("tickets")
+    .select("id, ticket_no, title, status, resolution_notes, service_team_id, resolved_at")
+    .in("status", ["resolved", "closed"])
+    .eq("is_confidential", false)
+    .not("resolution_notes", "is", null)
+    .order("resolved_at", { ascending: false });
+  if (isFaqProvider) resolvedQuery = resolvedQuery.eq("service_team_id", profile.service_team_id!);
+  const { data: resolvedTickets, error: resolvedError } = await resolvedQuery;
+  if (resolvedError) throw new Error(`Could not load resolved tickets: ${resolvedError.message}`);
+
+  const existingSourceIds = new Set(data.flatMap((entry) => entry.source_ticket_id ? [entry.source_ticket_id] : []));
+  const availableTickets = (resolvedTickets ?? [])
+    .filter((ticket) => ticket.resolution_notes?.trim() && !existingSourceIds.has(ticket.id))
+    .map((ticket) => ({
+      id: ticket.id,
+      ticket_no: ticket.ticket_no,
+      title: ticket.title,
+      resolution_notes: ticket.resolution_notes ?? "",
+      resolved_at: ticket.resolved_at
+    }));
+
   return (
     <div className="mx-auto max-w-4xl space-y-5">
       <header>
@@ -31,7 +53,7 @@ export default async function AdminFaqsPage() {
           Write and publish help answers for signed-in users.
         </p>
       </header>
-      <FaqManagement entries={data} />
+      <FaqManagement entries={data} resolvedTickets={availableTickets} />
     </div>
   );
 }

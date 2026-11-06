@@ -9,7 +9,7 @@ import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { PriorityMatrixGuide } from "@/components/tickets/priority-matrix-guide";
 import { createFaqDraftFromTicket, escalateIncidentToSoftwareCsr, reviewTicketPriority, routeTicket, updateTicketStatus } from "@/lib/actions";
 import { calculateTicketPriority, needsTicketPriorityReview } from "@/lib/utils";
-import type { EmployeeRole, Profile, Ticket, TicketImpact, TicketStatus, TicketUrgency } from "@/lib/types";
+import type { CcgDatabaseResult, CcgFollowupStatus, EmployeeRole, Profile, Ticket, TicketImpact, TicketStatus, TicketUrgency } from "@/lib/types";
 
 const ticketStatuses: TicketStatus[] = [
   "open",
@@ -38,6 +38,8 @@ export function TicketActions({
   const [routing, setRouting] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [nextStatus, setNextStatus] = useState<TicketStatus>(ticket.status as TicketStatus);
+  const [ccgDatabaseResult, setCcgDatabaseResult] = useState<CcgDatabaseResult | "">(ticket.ccg_database_result ?? "");
+  const [ccgFollowupStatus, setCcgFollowupStatus] = useState<CcgFollowupStatus>(ticket.ccg_followup_status ?? "pending");
   const [routingMessage, setRoutingMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [routingFailed, setRoutingFailed] = useState(false);
@@ -59,7 +61,8 @@ export function TicketActions({
   const canResolve = profile.user_side === "admin"
     || (profile.user_side === "employee"
       && profile.service_team_id === ticket.service_team_id
-      && (roles.includes("Personnel") || roles.includes("Coordinator")));
+      && (roles.includes("Personnel") || roles.includes("Coordinator"))
+      && (!ticket.is_confidential || ticket.assigned_to === profile.id));
   const canReviewPriority = profile.user_side === "employee"
     && Boolean(profile.service_team_id)
     && profile.service_team_id === ticket.service_team_id
@@ -84,6 +87,35 @@ export function TicketActions({
   const editableStatuses = canResolve
     ? ticketStatuses
     : ticketStatuses.filter((status) => !["resolved", "closed", "rejected"].includes(status));
+  const isCcgWorkflow = ticket.service_team?.slug === "cost-control" && Boolean(ticket.ccg_request_type);
+  const ccgStatusesByCurrent: Record<string, TicketStatus[]> = {
+    open: ["open", "under_review"],
+    assigned: ["assigned", "under_review"],
+    under_review: ["under_review", "in_progress", "resolved", "waiting_for_info"],
+    in_progress: ["in_progress", "resolved", "waiting_for_info"],
+    waiting_for_info: ["waiting_for_info", "under_review"],
+    resolved: ["resolved"],
+    closed: ["closed"],
+    rejected: ["rejected"]
+  };
+  const statusOptions = isCcgWorkflow && canResolve
+    ? ccgStatusesByCurrent[ticket.status] ?? [ticket.status as TicketStatus]
+    : editableStatuses;
+  const statusOptionsForSelection = isCcgWorkflow
+    && ticket.status === "under_review"
+    && ccgDatabaseResult === "unavailable"
+    && ((ticket.ccg_request_type === "unit_rate" && ticket.ccg_request_scope === "per_material") || ticket.ccg_request_type === "vendor_list")
+    ? statusOptions.filter((status) => status !== "resolved")
+    : statusOptions;
+  const selectingCcgDatabaseResult = isCcgWorkflow
+    && ticket.status === "under_review"
+    && ["in_progress", "resolved"].includes(nextStatus);
+  const selectingCcgFollowupResult = isCcgWorkflow
+    && ticket.status === "in_progress"
+    && Boolean(ticket.ccg_followup_type)
+    && ticket.ccg_followup_status === "pending";
+  const requiresCcgDatabaseResult = selectingCcgDatabaseResult
+    && !(ticket.ccg_request_type === "unit_rate" && ticket.ccg_request_scope === "whole_boq");
   const routingStatus = ["open", "under_review"].includes(ticket.status)
     ? "assigned"
     : ticket.status;
@@ -239,9 +271,9 @@ export function TicketActions({
         </div>
         {profile.user_side === "employee" && profile.service_team?.slug === "cost-control" && ticket.ccg_request_type && (
           <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-xs leading-5 text-emerald-950">
-            <p className="font-bold">CCG process</p>
+            <p className="font-bold">CCG stage: {ticket.status === "open" ? "Acknowledge request" : ticket.status === "assigned" ? "Assigned for review" : ticket.status === "under_review" ? "Check the relevant database" : ticket.status === "in_progress" ? ticket.ccg_followup_status === "pending" ? ticket.ccg_followup_type === "vendor_quote" ? "Vendor quote requested" : "Vendor search underway" : "Prepare the response" : ticket.status === "resolved" ? "Awaiting requester receipt" : ticket.status.replaceAll("_", " ")}</p>
             <ol className="mt-1 list-inside list-decimal space-y-1">
-              <li>Acknowledge and check the request within 24 hours.</li>
+              <li>Move a new request to Under review to record acknowledgement and begin the database check within 24 hours.</li>
               <li>{ticket.ccg_request_type === "unit_rate"
                 ? ticket.ccg_request_scope === "whole_boq"
                   ? "Submit the whole BOQ within 24 hours."
@@ -249,7 +281,7 @@ export function TicketActions({
                 : ticket.ccg_request_type === "vendor_list"
                   ? "Submit a database match within 24 hours; otherwise search and respond within 3–5 working days."
                   : "Submit an available TOR / contract reference within 24 hours, or notify the requester if none is available."}</li>
-              <li>Record the database check and response in the resolution summary; the requester confirms receipt by closing.</li>
+              <li>The workflow blocks the next stage until its required database decision and vendor follow-up result are recorded. The requester confirms receipt by closing.</li>
             </ol>
           </div>
         )}
@@ -296,7 +328,7 @@ export function TicketActions({
               <Button type="submit" variant="secondary" loading={reviewingPriority}><Save className="h-4 w-4" />Save priority review</Button>
             </form>
           )}
-          {canRoute && (
+          {canRoute && (!isCcgWorkflow || !["resolved", "closed", "rejected"].includes(ticket.status)) && (
             <form onSubmit={handleRoute} className="grid gap-3 border-b border-slate-100 pb-4">
               <p className="text-xs leading-5 text-slate-600">
                 Review the request, set its priority, and assign an active employee.
@@ -352,7 +384,7 @@ export function TicketActions({
               </Button>
             </form>
           )}
-          {(canRoute || canResolve) && (
+          {(canRoute || canResolve) && (!isCcgWorkflow || !["resolved", "closed", "rejected"].includes(ticket.status)) && (
             <form onSubmit={handleStatusUpdate} className="grid gap-3">
               <input type="hidden" name="ticket_id" value={ticket.id} />
               <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
@@ -363,9 +395,11 @@ export function TicketActions({
                   onChange={(event) => setNextStatus(event.target.value as TicketStatus)}
                   className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
                 >
-                  {editableStatuses.map((status) => (
+                  {statusOptionsForSelection.map((status) => (
                     <option key={status} value={status}>
-                      {ticket.request_type === "incident_report" && status === "under_review"
+                      {isCcgWorkflow
+                        ? status === "under_review" ? "Acknowledge and review" : status === "in_progress" ? "Begin / continue work" : status === "resolved" ? "Submit response" : status === "waiting_for_info" ? "Return to requester" : status.replaceAll("_", " ")
+                        : ticket.request_type === "incident_report" && status === "under_review"
                         ? "IT inspection"
                         : ticket.request_type === "incident_report" && status === "in_progress"
                           ? "Root cause analysis"
@@ -374,21 +408,36 @@ export function TicketActions({
                   ))}
                 </select>
               </label>
-              {canResolve && (
-                ticket.ccg_request_type && !(ticket.ccg_request_type === "unit_rate" && ticket.ccg_request_scope === "whole_boq") && (
+              {canResolve && requiresCcgDatabaseResult ? (
                   <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-                    Database check
-                    <select name="ccg_database_result" required={nextStatus === "resolved"} defaultValue="" className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring">
-                      <option value="">Choose when submitting the CCG response</option>
-                      <option value="available">Available in the database</option>
-                      <option value="unavailable">Not available in the database</option>
+                    Database result
+                    <select name="ccg_database_result" required value={ccgDatabaseResult} onChange={(event) => {
+                      const result = event.target.value as CcgDatabaseResult | "";
+                      setCcgDatabaseResult(result);
+                      if (result === "unavailable" && ((ticket.ccg_request_type === "unit_rate" && ticket.ccg_request_scope === "per_material") || ticket.ccg_request_type === "vendor_list")) setNextStatus("in_progress");
+                    }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring">
+                      <option value="">Choose the result of the database check</option>
+                      <option value="available">Available</option>
+                      <option value="unavailable">Not available</option>
                     </select>
+                    {ccgDatabaseResult === "unavailable" && (ticket.ccg_request_type === "unit_rate" || ticket.ccg_request_type === "vendor_list") && <span className="font-normal leading-5 text-slate-600">Continuing records the required {ticket.ccg_request_type === "unit_rate" ? "vendor quote request" : "vendor search"} as pending.</span>}
                   </label>
-                )
+                ) : null}
+              {canResolve && selectingCcgDatabaseResult && ticket.ccg_request_type === "unit_rate" && ticket.ccg_request_scope === "whole_boq" && <input type="hidden" name="ccg_database_result" value="not_required" />}
+              {canResolve && selectingCcgFollowupResult && (
+                <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
+                  {ticket.ccg_followup_type === "vendor_quote" ? "Vendor quote outcome" : "Vendor search outcome"}
+                  <select name="ccg_followup_status" required={nextStatus === "resolved"} value={ccgFollowupStatus} onChange={(event) => setCcgFollowupStatus(event.target.value as CcgFollowupStatus)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring">
+                    <option value="pending">Still pending</option>
+                    <option value="completed">Completed</option>
+                    <option value="vendor_unresponsive">Vendor did not respond</option>
+                    <option value="unsuitable">Vendor was not suitable</option>
+                  </select>
+                </label>
               )}
               {canResolve && (
                 <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-                  {ticket.request_type === "incident_report" ? "Inspection and root cause findings" : "Resolution summary"}
+                  {ticket.request_type === "incident_report" ? "Inspection and root cause findings" : isCcgWorkflow ? "CCG response summary" : "Resolution summary"}
                   <textarea
                     name="resolution_notes"
                     rows={3}
@@ -396,6 +445,8 @@ export function TicketActions({
                     defaultValue={ticket.resolution_notes ?? ""}
                     placeholder={ticket.request_type === "incident_report"
                       ? "Document the investigation, root cause, and corrective action before resolving."
+                      : isCcgWorkflow
+                        ? "Record the database result, requested quote or vendor search, and the response sent to the requester."
                       : "Record what was done before marking resolved."}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
                   />
@@ -412,7 +463,7 @@ export function TicketActions({
                     ? "Save investigation notes"
                     : "Update status"}
               </Button>
-              {canResolve && !["resolved", "closed", "rejected"].includes(ticket.status) && (
+              {canResolve && !isCcgWorkflow && !["resolved", "closed", "rejected"].includes(ticket.status) && (
                 <Button type="submit" name="resolve_ticket" value="true" loading={updatingStatus}>
                   <CheckCircle2 className="h-4 w-4" />
                   {updatingStatus ? "Submitting resolution..." : "Submit resolution"}

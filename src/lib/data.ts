@@ -2,6 +2,7 @@ import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Comment,
+  BusinessHoliday,
   EmployeeRole,
   ManagedProfile,
   Notification,
@@ -97,7 +98,7 @@ export async function getTickets(limit = 50) {
   const { data, error } = await supabase
     .from("tickets")
     .select(
-      "id, ticket_no, title, description, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at"
+      "id, ticket_no, title, description, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at"
     )
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -107,7 +108,7 @@ export async function getTickets(limit = 50) {
   return data ?? [];
 }
 
-const reportTicketSelection = "id, ticket_no, title, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_procurement_in_scope, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at";
+const reportTicketSelection = "id, ticket_no, title, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_procurement_in_scope, ccg_database_result, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at";
 
 export async function getServiceTeams({ inScopeOnly = false }: { inScopeOnly?: boolean } = {}): Promise<ServiceTeam[]> {
   const supabase = await createClient();
@@ -127,6 +128,14 @@ export async function getTicketSlaPolicies(): Promise<TicketSlaPolicy[]> {
     .select("priority_group, first_response_business_days, resolution_business_days, updated_at")
     .order("priority_group").returns<TicketSlaPolicy[]>();
   if (error) throw new Error(`Could not load ticket SLA policies: ${error.message}`);
+  return data ?? [];
+}
+
+export async function getCcgBusinessHolidays(): Promise<BusinessHoliday[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("ccg_business_holidays")
+    .select("holiday_date, name").order("holiday_date").returns<BusinessHoliday[]>();
+  if (error) throw new Error(`Could not load CCG holidays: ${error.message}`);
   return data ?? [];
 }
 
@@ -182,7 +191,7 @@ export async function getTicket(id: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("tickets")
-    .select("id, ticket_no, title, description, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, is_confidential, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_procurement_in_scope, requester_id, assigned_to, service_team_id, service_team:service_teams(id, name, slug), resolution_notes, due_date, created_at, reopened_at, resolved_at, first_response_at, updated_at")
+    .select("id, ticket_no, title, description, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, is_confidential, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_procurement_in_scope, ccg_database_result, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, requester_id, assigned_to, service_team_id, service_team:service_teams(id, name, slug), resolution_notes, due_date, created_at, reopened_at, resolved_at, first_response_at, updated_at")
     .eq("id", id)
     .single<Ticket>();
 
@@ -418,6 +427,20 @@ export async function getAssignableEmployees(serviceTeamId?: number | null) {
   const { data } = await query.returns<Profile[]>();
 
   return data ?? [];
+}
+
+export async function getCcgAssignableEmployees(serviceTeamId?: number | null) {
+  const employees = await getAssignableEmployees(serviceTeamId);
+  if (employees.length === 0) return employees;
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("user_roles").select("user_id, roles(name)")
+    .in("user_id", employees.map((employee) => employee.id));
+  if (error) throw new Error(`Could not load CCG assignees: ${error.message}`);
+  const eligible = new Set((data ?? []).flatMap((assignment) => {
+    const roleName = (assignment.roles as { name?: string } | null)?.name;
+    return roleName === "Personnel" || roleName === "Coordinator" ? [assignment.user_id] : [];
+  }));
+  return employees.filter((employee) => eligible.has(employee.id));
 }
 
 export async function getAssignableRoles() {
