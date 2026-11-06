@@ -2,13 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, Plus, Ticket } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
-import { getAllTickets, getCurrentContext, getServiceTeams } from "@/lib/data";
+import { getCurrentContext, getServiceTeams, getTeamTickets } from "@/lib/data";
 
 export default async function ITSupportPage() {
-  const [{ profile }, teams, allTickets] = await Promise.all([
+  const [{ profile }, teams] = await Promise.all([
     getCurrentContext(),
-    getServiceTeams({ inScopeOnly: true }),
-    getAllTickets()
+    getServiceTeams({ inScopeOnly: true })
   ]);
   if (!profile) redirect("/login");
   if (profile.user_side === "employee" && profile.service_team?.slug !== "it-support") redirect("/dashboard");
@@ -16,7 +15,7 @@ export default async function ITSupportPage() {
 
   const team = teams.find((item) => item.slug === "it-support");
   if (!team) throw new Error("The IT Support service team is not configured.");
-  const tickets = allTickets.filter((ticket) => ticket.service_team_id === team.id);
+  const tickets = await getTeamTickets(team.id);
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">

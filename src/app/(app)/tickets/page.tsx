@@ -1,11 +1,39 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Plus, Ticket } from "lucide-react";
 import { TicketWorkloadView } from "@/components/tickets/ticket-workload-view";
-import { getCurrentContext } from "@/lib/data";
+import { getCurrentProfile, getTickets } from "@/lib/data";
 import { TicketDraftsList } from "@/components/tickets/ticket-drafts-list";
 
+async function TicketWorkloadSection({ currentUserId }: { currentUserId?: string }) {
+  const tickets = await getTickets(100);
+  return <TicketWorkloadView tickets={tickets} currentUserId={currentUserId} />;
+}
+
+function TicketWorkloadSkeleton() {
+  return (
+    <section className="space-y-4" aria-label="Loading tickets" aria-busy="true">
+      <div className="flex gap-2">
+        {["w-28", "w-32", "w-24"].map((width) => <div key={width} className={`h-10 animate-pulse rounded-xl bg-slate-200 ${width}`} />)}
+      </div>
+      <div className="flex h-10 items-center justify-between rounded-lg bg-white/70 px-3">
+        <div className="h-3 w-40 animate-pulse rounded bg-slate-200" />
+        <div className="h-8 w-20 animate-pulse rounded-md bg-slate-200" />
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white">
+        <div className="flex h-16 items-center justify-between border-b border-slate-100 px-5">
+          <div className="h-3 w-36 animate-pulse rounded bg-slate-200" />
+          <div className="h-10 w-56 animate-pulse rounded-xl bg-slate-100" />
+        </div>
+        {Array.from({ length: 8 }, (_, index) => <div key={index} className="h-[88px] animate-pulse border-b border-slate-100 last:border-0" />)}
+      </div>
+      <span className="sr-only">Loading your tickets…</span>
+    </section>
+  );
+}
+
 export default async function TicketsPage() {
-  const { profile } = await getCurrentContext();
+  const profile = await getCurrentProfile();
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
@@ -36,7 +64,9 @@ export default async function TicketsPage() {
         </div>
       </header>
       {profile?.user_side === "client" && <TicketDraftsList />}
-      <TicketWorkloadView tickets={[]} currentUserId={profile?.id} />
+      <Suspense fallback={<TicketWorkloadSkeleton />}>
+        <TicketWorkloadSection currentUserId={profile?.id} />
+      </Suspense>
     </div>
   );
 }

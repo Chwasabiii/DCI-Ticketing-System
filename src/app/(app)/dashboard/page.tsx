@@ -14,7 +14,7 @@ import {
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { TicketReports } from "@/components/reports/ticket-reports";
 import { CostControlDashboard } from "@/components/tickets/cost-control-dashboard";
-import { getAllTickets, getCurrentContext } from "@/lib/data";
+import { getDashboardTickets, getCurrentContext } from "@/lib/data";
 import { isTicketOverdue } from "@/lib/utils";
 
 function StatCard({
@@ -55,18 +55,16 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  const [{ profile, roleNames }, tickets] = await Promise.all([
-    getCurrentContext(),
-    getAllTickets()
-  ]);
+  const { profile, roleNames } = await getCurrentContext();
+  const tickets = await getDashboardTickets(
+    profile?.user_side === "employee" ? profile.service_team_id ?? -1 : undefined
+  );
 
   if (profile?.user_side === "employee" && profile.service_team?.slug === "cost-control") {
-    return <CostControlDashboard tickets={tickets.filter((ticket) => ticket.service_team_id === profile.service_team_id)} name={profile.full_name} />;
+    return <CostControlDashboard tickets={tickets} name={profile.full_name} />;
   }
 
-  const visibleTickets = profile?.user_side === "employee"
-    ? tickets.filter((ticket) => ticket.service_team_id === profile.service_team_id)
-    : tickets;
+  const visibleTickets = tickets;
   const isEndUser = profile?.user_side === "client";
 
   const active = visibleTickets.filter(
@@ -85,8 +83,11 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto max-w-[1400px] space-y-7">
       <section className="relative isolate overflow-hidden rounded-3xl bg-[#172b4d] px-6 py-7 text-white shadow-[0_18px_48px_rgba(18,33,58,0.18)] sm:px-9 sm:py-9">
-        <div className="absolute -right-10 -top-28 -z-10 h-72 w-72 rounded-full bg-blue-400/20 blur-3xl" />
-        <div className="absolute bottom-[-7rem] right-[22%] -z-10 h-56 w-56 rounded-full bg-indigo-400/10 blur-3xl" />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 -z-10"
+          style={{ backgroundImage: "radial-gradient(ellipse at 85% 15%, rgba(96, 165, 250, 0.2), transparent 42%), radial-gradient(ellipse at 62% 110%, rgba(129, 140, 248, 0.12), transparent 40%)" }}
+        />
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-blue-100">

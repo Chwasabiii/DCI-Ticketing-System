@@ -98,7 +98,7 @@ export async function getTickets(limit = 50) {
   const { data, error } = await supabase
     .from("tickets")
     .select(
-      "id, ticket_no, title, description, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at"
+      "id, ticket_no, title, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at"
     )
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -108,7 +108,12 @@ export async function getTickets(limit = 50) {
   return data ?? [];
 }
 
-const reportTicketSelection = "id, ticket_no, title, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_procurement_in_scope, ccg_database_result, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at";
+const queueTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, is_confidential, assigned_to, due_date, created_at, resolved_at, first_response_at, resolution_notes";
+
+const dashboardTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, is_confidential, request_type, service_category, ccg_request_type, ccg_stage_due_at, due_date, created_at, resolved_at, service_team_id";
+
+const performanceTicketSelection = "status, priority, assigned_to, first_response_at, resolved_at, created_at, reopened_at, due_date, ccg_request_type, ccg_stage_due_at, ccg_vendor_due_at, ccg_vendor_expected_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds";
+const reportSummarySelection = "status, priority, created_at, due_date, resolved_at, ccg_request_type, ccg_stage_due_at";
 
 export async function getServiceTeams({ inScopeOnly = false }: { inScopeOnly?: boolean } = {}): Promise<ServiceTeam[]> {
   const supabase = await createClient();
@@ -139,24 +144,72 @@ export async function getCcgBusinessHolidays(): Promise<BusinessHoliday[]> {
   return data ?? [];
 }
 
-export async function getAllTickets() {
+async function getPagedTickets(selection: string, serviceTeamId?: number, createdAfter?: string) {
   const supabase = await createClient();
   const pageSize = 1000;
   const allTickets: Ticket[] = [];
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase
+    let query = supabase
       .from("tickets")
-      .select(reportTicketSelection)
+      .select(selection)
       .order("created_at", { ascending: false })
-      .range(offset, offset + pageSize - 1)
-      .returns<Ticket[]>();
+      .range(offset, offset + pageSize - 1);
+    if (serviceTeamId !== undefined) query = query.eq("service_team_id", serviceTeamId);
+    if (createdAfter) query = query.or(`created_at.gte.${createdAfter},reopened_at.gte.${createdAfter}`);
+    const { data, error } = await query.returns<Ticket[]>();
     if (error) throw new Error(`Could not load tickets: ${error.message}`);
     allTickets.push(...(data ?? []));
     if (!data || data.length < pageSize) return allTickets;
   }
 }
 
+export async function getDashboardTickets(serviceTeamId?: number) {
+  return getPagedTickets(dashboardTicketSelection, serviceTeamId);
+}
+
+export async function getTeamTickets(serviceTeamId: number) {
+  return getPagedTickets(queueTicketSelection, serviceTeamId);
+}
+
+export async function getInboxTickets(serviceTeamId?: number) {
+  return getPagedTickets(queueTicketSelection, serviceTeamId);
+}
+
+export async function getPerformanceTickets(serviceTeamId: number, createdAfter: string) {
+  return getPagedTickets(performanceTicketSelection, serviceTeamId, createdAfter);
+}
+
 export async function getReportTickets({
+  startDate,
+  endDate,
+  status,
+  page = 1,
+  pageSize = 25
+}: {
+  startDate?: string;
+  endDate?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const supabase = await createClient();
+  let query = supabase.from("tickets")
+    .select(queueTicketSelection, { count: "exact" })
+    .order("created_at", { ascending: false });
+  if (startDate) query = query.gte("created_at", `${startDate}T00:00:00.000Z`);
+  if (endDate) {
+    const dayAfter = new Date(`${endDate}T00:00:00.000Z`);
+    dayAfter.setUTCDate(dayAfter.getUTCDate() + 1);
+    query = query.lt("created_at", dayAfter.toISOString());
+  }
+  if (status) query = query.eq("status", status);
+  const from = (page - 1) * pageSize;
+  const { data, error, count } = await query.range(from, from + pageSize - 1).returns<Ticket[]>();
+  if (error) throw new Error(`Could not load ticket report: ${error.message}`);
+  return { tickets: data ?? [], totalCount: count ?? 0 };
+}
+
+export async function getReportSummaryTickets({
   startDate,
   endDate,
   status
@@ -167,12 +220,9 @@ export async function getReportTickets({
 }) {
   const supabase = await createClient();
   const pageSize = 1000;
-  const tickets: Ticket[] = [];
+  const tickets: Array<Pick<Ticket, "status" | "priority" | "created_at" | "due_date" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">> = [];
   for (let offset = 0; ; offset += pageSize) {
-    let query = supabase
-      .from("tickets")
-      .select(reportTicketSelection)
-      .order("created_at", { ascending: false });
+    let query = supabase.from("tickets").select(reportSummarySelection).order("created_at", { ascending: false });
     if (startDate) query = query.gte("created_at", `${startDate}T00:00:00.000Z`);
     if (endDate) {
       const dayAfter = new Date(`${endDate}T00:00:00.000Z`);
@@ -180,8 +230,9 @@ export async function getReportTickets({
       query = query.lt("created_at", dayAfter.toISOString());
     }
     if (status) query = query.eq("status", status);
-    const { data, error } = await query.range(offset, offset + pageSize - 1).returns<Ticket[]>();
-    if (error) throw new Error(`Could not load ticket report: ${error.message}`);
+    const { data, error } = await query.range(offset, offset + pageSize - 1)
+      .returns<typeof tickets>();
+    if (error) throw new Error(`Could not load ticket report summary: ${error.message}`);
     tickets.push(...(data ?? []));
     if (!data || data.length < pageSize) return tickets;
   }
@@ -326,17 +377,23 @@ export async function getTicketAttachments(ticketId: string) {
     .order("created_at", { ascending: true })
     .returns<TicketAttachment[]>();
 
-  return Promise.all(
-    (data ?? []).map(async (attachment) => {
-      const { data: signedFile } = await supabase.storage
-        .from("ticket-attachments")
-        .createSignedUrl(attachment.file_path, 300, {
-          download: attachment.file_name
-        });
+  const attachments = data ?? [];
+  if (!attachments.length) return [];
 
-      return { ...attachment, signed_url: signedFile?.signedUrl ?? null };
-    })
+  const { data: signedFiles } = await supabase.storage
+    .from("ticket-attachments")
+    .createSignedUrls(attachments.map((attachment) => attachment.file_path), 300);
+  const signedUrls = new Map(
+    (signedFiles ?? []).flatMap((file) => file.path && file.signedUrl ? [[file.path, file.signedUrl] as const] : [])
   );
+
+  return attachments.map((attachment) => {
+    const signedUrl = signedUrls.get(attachment.file_path);
+    if (!signedUrl) return { ...attachment, signed_url: null };
+    const url = new URL(signedUrl);
+    url.searchParams.set("download", attachment.file_name);
+    return { ...attachment, signed_url: url.toString() };
+  });
 }
 
 export async function getProfiles() {

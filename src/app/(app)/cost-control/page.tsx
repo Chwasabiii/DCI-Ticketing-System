@@ -2,13 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, Calculator, Clock3, Plus, Ticket } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
-import { getAllTickets, getCurrentContext, getServiceTeams } from "@/lib/data";
+import { getCurrentContext, getServiceTeams, getTeamTickets } from "@/lib/data";
 
 export default async function CostControlPage() {
-  const [{ profile }, teams, allTickets] = await Promise.all([
+  const [{ profile }, teams] = await Promise.all([
     getCurrentContext(),
-    getServiceTeams({ inScopeOnly: true }),
-    getAllTickets()
+    getServiceTeams({ inScopeOnly: true })
   ]);
   if (!profile) redirect("/login");
   if (profile.user_side === "employee" && profile.service_team?.slug !== "cost-control") redirect("/dashboard");
@@ -16,7 +15,7 @@ export default async function CostControlPage() {
 
   const team = teams.find((item) => item.slug === "cost-control");
   if (!team) throw new Error("The Cost Control Group service team is not configured.");
-  const tickets = allTickets.filter((ticket) => ticket.service_team_id === team.id);
+  const tickets = await getTeamTickets(team.id);
   const isProvider = profile.user_side === "employee";
   const active = tickets.filter((ticket) => !["resolved", "closed", "rejected"].includes(ticket.status));
   const pending = tickets.filter((ticket) => ticket.status === "open");

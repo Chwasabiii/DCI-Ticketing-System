@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { Activity, CalendarDays, CircleHelp, Gauge, Users } from "lucide-react";
-import { getAllTickets, getAssignableEmployees, getCurrentContext, getTicketSlaPolicies } from "@/lib/data";
+import { getAssignableEmployees, getCurrentContext, getPerformanceTickets, getTicketSlaPolicies } from "@/lib/data";
 import { getTicketSlaIndicators } from "@/lib/utils";
 import type { Profile, Ticket, TicketSlaPolicy } from "@/lib/types";
 
@@ -84,25 +84,25 @@ function providerLabel(provider: Profile) {
 }
 
 export default async function PerformancePage() {
-  const [{ profile }, allTickets, policies] = await Promise.all([
+  const [{ profile }, policies] = await Promise.all([
     getCurrentContext(),
-    getAllTickets(),
     getTicketSlaPolicies()
   ]);
   if (!profile) redirect("/login");
   if (profile.user_side !== "employee" || !profile.service_team_id) redirect("/dashboard");
 
+  const now = Date.now();
+  const periodStart = now - 90 * 24 * 60 * 60 * 1000;
+  const allTickets = await getPerformanceTickets(profile.service_team_id, new Date(periodStart).toISOString());
   const providers = await getAssignableEmployees(profile.service_team_id);
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
   providerById.set(profile.id, profile);
   const teamProviders = [...providerById.values()].filter((provider) => provider.status === "active");
   const providerIds = new Set(teamProviders.map((provider) => provider.id));
-  const now = Date.now();
-  const periodStart = now - 90 * 24 * 60 * 60 * 1000;
   const periodTickets = allTickets.filter((ticket) => {
     const activityStartedAt = ticket.reopened_at ?? ticket.created_at;
     const createdAt = activityStartedAt ? Date.parse(activityStartedAt) : Number.NaN;
-    return ticket.service_team_id === profile.service_team_id && Number.isFinite(createdAt) && createdAt >= periodStart && createdAt <= now;
+    return Number.isFinite(createdAt) && createdAt >= periodStart && createdAt <= now;
   });
   const assignedTeamTickets = periodTickets.filter((ticket) => ticket.assigned_to && providerIds.has(ticket.assigned_to));
   const teamMetrics = calculateKpi(assignedTeamTickets, policies, now);

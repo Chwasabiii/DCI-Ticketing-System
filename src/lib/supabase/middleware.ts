@@ -26,9 +26,9 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getClaims();
+  const claims = data?.claims;
+  const isAuthenticated = !error && typeof claims?.sub === "string";
 
   const isAuthRoute = request.nextUrl.pathname.startsWith("/login");
   const isPublic =
@@ -37,14 +37,14 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname === "/accept-invitation" ||
     request.nextUrl.pathname === "/account-archived";
 
-  if (!user && !isPublic) {
+  if (!isAuthenticated && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", request.nextUrl.pathname);
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute) {
+  if (isAuthenticated && isAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     return NextResponse.redirect(url);

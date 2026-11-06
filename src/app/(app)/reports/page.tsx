@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { TicketReports } from "@/components/reports/ticket-reports";
 import { TicketTable } from "@/components/tickets/ticket-table";
-import { getCurrentContext, getReportTickets } from "@/lib/data";
+import { getCurrentContext, getReportSummaryTickets, getReportTickets } from "@/lib/data";
 import type { TicketStatus } from "@/lib/types";
 
 const statuses: TicketStatus[] = ["open", "under_review", "assigned", "in_progress", "waiting_for_info", "resolved", "closed", "rejected"];
@@ -26,13 +26,14 @@ export default async function ReportsPage({
     : undefined;
   const requestedPage = typeof params.page === "string" ? Number(params.page) : 1;
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const [{ profile }, tickets] = await Promise.all([
+  const [{ profile }, reportPage, summaryTickets] = await Promise.all([
     getCurrentContext(),
-    getReportTickets({ startDate: startValue, endDate: endValue, status: statusValue })
+    getReportTickets({ startDate: startValue, endDate: endValue, status: statusValue, page, pageSize }),
+    getReportSummaryTickets({ startDate: startValue, endDate: endValue, status: statusValue })
   ]);
-  const totalPages = Math.max(1, Math.ceil(tickets.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(reportPage.totalCount / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const visibleTickets = tickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const visibleTickets = currentPage === page ? reportPage.tickets : (await getReportTickets({ startDate: startValue, endDate: endValue, status: statusValue, page: currentPage, pageSize })).tickets;
   const makePageUrl = (nextPage: number) => {
     const next = new URLSearchParams();
     if (startValue) next.set("start", startValue);
@@ -41,6 +42,11 @@ export default async function ReportsPage({
     next.set("page", String(nextPage));
     return `/reports?${next.toString()}`;
   };
+  const exportParams = new URLSearchParams();
+  if (startValue) exportParams.set("start", startValue);
+  if (endValue) exportParams.set("end", endValue);
+  if (statusValue) exportParams.set("status", statusValue);
+  const exportHref = `/api/ticket-report.csv${exportParams.size ? `?${exportParams.toString()}` : ""}`;
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-7">
@@ -58,11 +64,11 @@ export default async function ReportsPage({
         <Link href="/reports" className="focus-ring inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Clear</Link>
       </form>
 
-      <TicketReports tickets={tickets} canExport={profile?.user_side === "admin" && profile.status === "active"} />
+      <TicketReports tickets={summaryTickets} canExport={profile?.user_side === "admin" && profile.status === "active"} exportHref={exportHref} />
 
       <section className="space-y-3" aria-label="Ticket report results">
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div><h2 className="text-xl font-bold text-navy">Matching tickets</h2><p className="mt-1 text-sm text-slate-500">{tickets.length} results · page {currentPage} of {totalPages}</p></div>
+          <div><h2 className="text-xl font-bold text-navy">Matching tickets</h2><p className="mt-1 text-sm text-slate-500">{reportPage.totalCount} results · page {currentPage} of {totalPages}</p></div>
           <nav aria-label="Ticket report pages" className="flex items-center gap-2">
             {currentPage > 1 ? <Link className="focus-ring inline-flex min-h-10 items-center rounded-lg border border-slate-200 px-3 text-sm font-semibold hover:bg-white" href={makePageUrl(currentPage - 1)}>Previous</Link> : <span className="inline-flex min-h-10 items-center rounded-lg border border-slate-100 px-3 text-sm text-slate-400">Previous</span>}
             {currentPage < totalPages ? <Link className="focus-ring inline-flex min-h-10 items-center rounded-lg border border-slate-200 px-3 text-sm font-semibold hover:bg-white" href={makePageUrl(currentPage + 1)}>Next</Link> : <span className="inline-flex min-h-10 items-center rounded-lg border border-slate-100 px-3 text-sm text-slate-400">Next</span>}

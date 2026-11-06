@@ -12,8 +12,9 @@ function terms(value: string) {
 
 export async function POST(request: Request) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  const { data: claimsResult, error: claimsError } = await supabase.auth.getClaims();
+  const claims = claimsResult?.claims;
+  if (claimsError || typeof claims?.sub !== "string") {
     return NextResponse.json({ error: "Sign in to use the FAQ assistant." }, { status: 401, headers: noStore });
   }
 

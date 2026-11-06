@@ -26,7 +26,7 @@ export function localDateString(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-export function isTicketOverdue(ticket: Ticket, today = localDateString()) {
+export function isTicketOverdue(ticket: Pick<Ticket, "ccg_request_type" | "ccg_stage_due_at" | "status" | "due_date">, today = localDateString()) {
   if (ticket.ccg_request_type) {
     return Boolean(ticket.ccg_stage_due_at
       && ticket.status !== "waiting_for_info"

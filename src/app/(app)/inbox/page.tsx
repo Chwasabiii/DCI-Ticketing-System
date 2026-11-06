@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { TicketTriageInbox } from "@/components/tickets/ticket-triage-inbox";
-import { getAllTickets, getAssignableEmployees, getCurrentContext, getTicketSlaPolicies } from "@/lib/data";
+import { getAssignableEmployees, getCurrentContext, getInboxTickets, getTicketSlaPolicies } from "@/lib/data";
 
 const allowedViews = ["all", "unassigned", "mine", "overdue"] as const;
 
@@ -9,14 +9,16 @@ export default async function TriageInboxPage({
 }: {
   searchParams: Promise<{ view?: string }>;
 }) {
-  const [{ profile, roleNames }, tickets, slaPolicies, params] = await Promise.all([
+  const [{ profile, roleNames }, slaPolicies, params] = await Promise.all([
     getCurrentContext(),
-    getAllTickets(),
     getTicketSlaPolicies(),
     searchParams
   ]);
   if (!profile) redirect("/login");
   if (profile.user_side === "client") redirect("/tickets");
+  const tickets = await getInboxTickets(
+    profile.user_side === "employee" ? profile.service_team_id ?? -1 : undefined
+  );
 
   const initialView = allowedViews.find((view) => view === params.view) ?? "all";
   const isItSupportProvider = profile.user_side === "employee" && profile.service_team?.slug === "it-support";
