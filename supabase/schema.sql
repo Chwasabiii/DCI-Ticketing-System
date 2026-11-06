@@ -22,6 +22,7 @@ create table public.profiles (
   id            uuid primary key references auth.users(id) on delete cascade,
   employee_id   text unique,
   full_name     text,
+  full_name_change_used boolean not null default false,
   email         text,
   user_side     public.user_side not null default 'client',
   status        text not null default 'active',          -- active / inactive (archived)
@@ -29,6 +30,33 @@ create table public.profiles (
   department_id bigint references public.departments(id),
   created_at    timestamptz not null default now()
 );
+
+create or replace function public.change_own_display_name(p_full_name text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Sign in to change your display name.';
+  end if;
+  if p_full_name is null or length(btrim(p_full_name)) = 0 or length(btrim(p_full_name)) > 200 then
+    raise exception 'Enter a display name up to 200 characters.';
+  end if;
+  update public.profiles
+  set full_name = btrim(p_full_name), full_name_change_used = true
+  where id = auth.uid() and status = 'active' and full_name_change_used = false;
+  if not found then
+    if exists (select 1 from public.profiles where id = auth.uid() and full_name_change_used) then
+      raise exception 'Display name change already used.';
+    end if;
+    raise exception 'Could not find an active profile.';
+  end if;
+end;
+$$;
+revoke all on function public.change_own_display_name(text) from public;
+grant execute on function public.change_own_display_name(text) to authenticated;
 
 -- Permission levels inside the Employee-User side
 create table public.roles (
@@ -82,6 +110,16 @@ create table public.tickets (
   description      text check (description is null or char_length(btrim(description)) between 1 and 10000),
   priority         public.ticket_priority not null default 'medium',
   status           public.ticket_status   not null default 'open',
+  request_type     text not null default 'service_request'
+                     check (request_type in ('service_request','access_request','incident_report')),
+  service_category text not null default 'other_services'
+                     check (service_category in ('hardware','software','network','microsoft','security','other_services')),
+  impact           text not null default 'medium',
+  urgency          text not null default 'medium',
+  reported_impact  text,
+  reported_urgency text,
+  priority_reviewed_at timestamptz,
+  priority_reviewed_by uuid references public.profiles(id) on delete set null,
   requester_id     uuid not null default auth.uid() references public.profiles(id),
   department_id    bigint references public.departments(id),
   project_id       bigint references public.projects(id),
@@ -92,6 +130,7 @@ create table public.tickets (
   resolution_notes text,
   resolved_at      timestamptz,
   closed_at        timestamptz,
+  reopened_at      timestamptz,
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );

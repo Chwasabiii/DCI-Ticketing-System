@@ -27,11 +27,15 @@ export type Priority = "low" | "medium" | "high" | "urgent";
 export type TicketImpact = "low" | "medium" | "high";
 export type TicketUrgency = "low" | "medium" | "high";
 
-export type RequestType = "general" | "access_request" | "incident_report";
+export type RequestType = "service_request" | "access_request" | "incident_report" | "general";
+export type ServiceCategory = "hardware" | "software" | "network" | "microsoft" | "security" | "other_services";
+export type CcgRequestType = "unit_rate" | "vendor_list" | "tor_contracts";
+export type CcgRequestScope = "whole_boq" | "per_material";
 
 export type FaqEntry = {
   id: number;
   service_team_id?: number | null;
+  source_ticket_id?: number | null;
   question: string;
   answer: string;
   display_order: number;
@@ -42,6 +46,7 @@ export type FaqEntry = {
 export type Profile = {
   id: string;
   full_name: string | null;
+  full_name_change_used?: boolean;
   email: string | null;
   user_side: UserSide;
   status: string | null;
@@ -84,14 +89,24 @@ export type Ticket = {
   priority: Priority | string;
   impact?: TicketImpact;
   urgency?: TicketUrgency;
+  reported_impact?: TicketImpact | null;
+  reported_urgency?: TicketUrgency | null;
+  priority_reviewed_at?: string | null;
+  priority_reviewed_by?: string | null;
   is_confidential?: boolean;
   request_type?: RequestType;
+  service_category?: ServiceCategory;
+  ccg_request_type?: CcgRequestType | null;
+  ccg_request_scope?: CcgRequestScope | null;
+  ccg_procurement_in_scope?: boolean | null;
   requester_id?: string | null;
   assigned_to?: string | null;
   service_team_id?: number | null;
+  service_team?: Pick<ServiceTeam, "id" | "name" | "slug"> | null;
   resolution_notes?: string | null;
   due_date?: string | null;
   created_at?: string | null;
+  reopened_at?: string | null;
   resolved_at?: string | null;
   first_response_at?: string | null;
   updated_at?: string | null;

@@ -66,7 +66,7 @@ export function NotificationMenu({ notifications, unreadCount, userId }: { notif
         aria-expanded={menuOpen}
         aria-controls="notifications-menu"
         onClick={() => setMenuOpen((open) => !open)}
-        className="focus-ring grid h-10 w-10 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50"
+        className="focus-ring grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-accent"
         title="Notifications"
       >
         <Bell className="h-5 w-5" />

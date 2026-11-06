@@ -19,8 +19,10 @@ export default async function TriageInboxPage({
   if (profile.user_side === "client") redirect("/tickets");
 
   const initialView = allowedViews.find((view) => view === params.view) ?? "all";
-  const canAssign = profile.user_side === "admin" || roleNames.includes("Coordinator");
-  const canChangeStatus = profile.user_side === "admin" || roleNames.includes("Personnel");
+  const isItSupportProvider = profile.user_side === "employee" && profile.service_team?.slug === "it-support";
+  const canAssign = profile.user_side === "admin" || isItSupportProvider || roleNames.includes("Coordinator");
+  const canChangeStatus = profile.user_side === "admin" || isItSupportProvider || roleNames.includes("Personnel") || roleNames.includes("Coordinator");
+  const canBulkChangeStatus = profile.user_side === "admin" || isItSupportProvider || roleNames.includes("Personnel");
   const employees = canAssign
     ? await getAssignableEmployees(profile.user_side === "employee" ? profile.service_team_id : undefined)
     : [];
@@ -31,7 +33,7 @@ export default async function TriageInboxPage({
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">Staff workspace</p>
         <h1 className="mt-1 text-3xl font-bold text-navy">Triage inbox</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-          Find tickets that need a decision or action. Your access rules still limit which tickets appear.
+          Find tickets that need a decision or action. {profile.user_side === "employee" ? "IT Support providers can assign tickets and update status; other service providers can claim eligible tickets and use actions granted by their roles." : "Your access rules still limit which tickets appear."}
         </p>
       </header>
       <TicketTriageInbox
@@ -41,6 +43,8 @@ export default async function TriageInboxPage({
         employees={employees}
         canAssign={canAssign}
         canChangeStatus={canChangeStatus}
+        canBulkChangeStatus={canBulkChangeStatus}
+        canClaim={profile.user_side === "employee" && Boolean(profile.service_team_id)}
         initialView={initialView}
       />
     </div>

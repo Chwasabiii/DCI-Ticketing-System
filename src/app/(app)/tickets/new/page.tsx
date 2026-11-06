@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, CheckCircle2, CircleHelp, LockKeyhole, TicketPlus } from "lucide-react";
+import { ArrowRight, CheckCircle2, CircleHelp, TicketPlus } from "lucide-react";
 import { TicketForm } from "@/components/tickets/ticket-form";
 import { getCurrentContext } from "@/lib/data";
 
@@ -10,7 +10,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
   if (profile.user_side !== "client") redirect("/dashboard");
 
   const { team } = await searchParams;
-  const teamSlug = team === "it-support" ? team : "it-support";
+  const teamSlug = team === "cost-control" ? team : "it-support";
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
       <header className="rounded-2xl bg-gradient-to-r from-[#172b4d] to-[#294c81] px-6 py-6 text-white shadow-[0_14px_36px_rgba(18,33,58,0.15)] sm:px-8">
@@ -18,11 +18,14 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
           <TicketPlus className="h-4 w-4" />
           PMSG Support
         </div>
-        <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">IT Support request</h1>
+        <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">{teamSlug === "cost-control" ? "CCG request" : "IT Support request"}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100/90 sm:text-base">
-          Tell us what you need. Our support team will review your request and keep you updated.
+          {teamSlug === "cost-control"
+            ? "Choose a CCG service and include the project, material, and document details needed to respond. CCG will acknowledge and review your request."
+            : "Tell us what you need. Our support team will review your request and keep you updated."}
         </p>
       </header>
+      {teamSlug === "cost-control" && <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">CCG support does not cover PMG requests that include Procurement in their scope. Vendor quote timing is 3–6 weeks; CCG cannot guarantee a vendor will respond or suit the work’s scope and complexity.</p>}
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
         <TicketForm teamSlug={teamSlug} />
         <aside className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
@@ -48,15 +51,6 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
                 </span>
               </li>
             </ul>
-          </section>
-          <section className="rounded-2xl border border-violet-100 bg-violet-50/70 p-5">
-            <div className="flex items-center gap-2 font-bold text-violet-950">
-              <LockKeyhole className="h-4 w-4" />
-              Need privacy?
-            </div>
-            <p className="mt-2 text-sm leading-5 text-violet-900/80">
-              Mark your ticket confidential to limit who can view its details and files.
-            </p>
           </section>
           <Link
             href="/faqs"

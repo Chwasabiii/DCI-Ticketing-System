@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Calculator, Clock3, FileText } from "lucide-react";
+import { ArrowRight, BarChart3, Calculator, Clock3, FileText } from "lucide-react";
 import type { Ticket } from "@/lib/types";
 import { TicketTable } from "@/components/tickets/ticket-table";
 
@@ -15,9 +15,12 @@ export function CostControlDashboard({ tickets, name }: { tickets: Ticket[]; nam
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-emerald-50"><Calculator className="h-4 w-4" />Cost Control Group workspace</span>
             <h1 className="mt-5 text-3xl font-bold sm:text-4xl">Welcome{ name ? `, ${name.split(" ")[0]}` : ""}</h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-emerald-50">This dashboard is reserved for Cost Control Group tickets. Team workflow stages and measures can be added once defined.</p>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-emerald-50">Track Cost Control Group requests, workload, and service level performance.</p>
           </div>
-          <Link href="/inbox" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-emerald-900 hover:bg-emerald-50">Open team inbox <ArrowRight className="h-4 w-4" /></Link>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link href="/performance" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white hover:bg-white/15"><BarChart3 className="h-4 w-4" />KPI score</Link>
+            <Link href="/inbox" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-emerald-900 hover:bg-emerald-50">Open team inbox <ArrowRight className="h-4 w-4" /></Link>
+          </div>
         </div>
       </header>
 

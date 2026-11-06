@@ -56,7 +56,7 @@ export function ProfileMenu({
         aria-expanded={menuOpen}
         aria-controls="profile-menu"
         onClick={() => setMenuOpen((open) => !open)}
-        className="focus-ring flex min-h-10 max-w-44 items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-left hover:bg-slate-50 sm:gap-3 sm:px-3"
+        className="focus-ring flex min-h-10 max-w-52 items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/50 sm:gap-3 sm:px-3"
       >
         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue-100 text-xs font-bold text-accent">
           {displayName.slice(0, 2).toUpperCase()}

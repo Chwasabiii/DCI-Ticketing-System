@@ -5,14 +5,18 @@ import { useMemo, useState } from "react";
 import { AlertCircle, ArrowUpRight, ChevronLeft, ChevronRight, LockKeyhole, Ticket as TicketIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { Ticket } from "@/lib/types";
-import { formatDate, getTicketSlaIndicators, isTicketOverdue } from "@/lib/utils";
+import { formatDate, getTicketSlaIndicators, isTicketOverdue, needsTicketPriorityReview } from "@/lib/utils";
 import { TicketQueueActions } from "@/components/tickets/ticket-queue-actions";
 import type { Profile, TicketSlaPolicy } from "@/lib/types";
 
 function requestTypeLabel(type: Ticket["request_type"]) {
   if (type === "access_request") return "Access request";
   if (type === "incident_report") return "Incident report";
-  return "General request";
+  return "Service request";
+}
+
+function serviceCategoryLabel(category: Ticket["service_category"]) {
+  return (category ?? "other_services").replaceAll("_", " ");
 }
 
 export function TicketTable({
@@ -26,7 +30,7 @@ export function TicketTable({
 }: {
   tickets: Ticket[];
   nextActions?: Record<string, string>;
-  queueActions?: { employees: Profile[]; canAssign: boolean; canChangeStatus: boolean };
+  queueActions?: { employees: Profile[]; canAssign: boolean; canChangeStatus: boolean; canClaim: boolean; currentUserId: string };
   selectedIds?: string[];
   onToggleSelection?: (id: string) => void;
   selectableIds?: string[];
@@ -111,12 +115,19 @@ export function TicketTable({
                         <LockKeyhole className="h-3 w-3" /> Confidential
                       </span>
                     )}
+                    {needsTicketPriorityReview(ticket) && (
+                      <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 ring-1 ring-amber-200">
+                        Review {ticket.reported_impact ?? "?"}/{ticket.reported_urgency ?? "?"}
+                      </span>
+                    )}
                   </span>
                   <span className="mt-1 block truncate text-sm font-bold text-navy group-hover:text-accent">
                     {ticket.title}
                   </span>
                   <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-                    <span>{requestTypeLabel(ticket.request_type)}</span>
+                    <span>{ticket.ccg_request_type ? ({ unit_rate: "Unit rate", vendor_list: "Vendor list", tor_contracts: "TOR / contracts" }[ticket.ccg_request_type] ?? "CCG request") : requestTypeLabel(ticket.request_type)}</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="capitalize">{ticket.ccg_request_scope ? ticket.ccg_request_scope.replaceAll("_", " ") : serviceCategoryLabel(ticket.service_category)}</span>
                     <span aria-hidden="true">·</span>
                     <span>Opened {formatDate(ticket.created_at)}</span>
                     {ticket.due_date && (
@@ -147,7 +158,7 @@ export function TicketTable({
                 <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-300 transition-colors group-hover:text-accent" />
               </span>
             </Link>
-            {queueActions && <TicketQueueActions ticket={ticket} {...queueActions} />}
+            {queueActions && <TicketQueueActions ticket={ticket} slaPolicies={slaPolicies} {...queueActions} />}
             </div>
             </div>
           </li>

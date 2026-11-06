@@ -83,7 +83,7 @@ export function TicketReports({ tickets, canExport }: { tickets: Ticket[]; canEx
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Open tickets</p><p className="mt-2 text-3xl font-bold text-navy">{tickets.filter((ticket) => !["resolved", "closed", "rejected"].includes(ticket.status)).length}</p></div>
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Overdue tickets</p><p className="mt-2 text-3xl font-bold text-urgent">{tickets.filter(isTicketOverdue).length}</p></div>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Overdue tickets</p><p className="mt-2 text-3xl font-bold text-urgent">{tickets.filter((ticket) => isTicketOverdue(ticket)).length}</p></div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Average resolution</p><p className="mt-2 text-3xl font-bold text-navy">{avgDays === null ? "—" : `${avgDays.toFixed(1)} days`}</p><p className="mt-1 text-xs text-slate-500">{resolvedDurations.length} resolved tickets with timestamps</p></div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Total tickets</p><p className="mt-2 text-3xl font-bold text-navy">{tickets.length}</p></div>
       </div>

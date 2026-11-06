@@ -97,7 +97,7 @@ export async function getTickets(limit = 50) {
   const { data, error } = await supabase
     .from("tickets")
     .select(
-      "id, ticket_no, title, description, status, priority, impact, urgency, request_type, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, updated_at, resolved_at, first_response_at"
+      "id, ticket_no, title, description, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at"
     )
     .order("created_at", { ascending: false })
     .limit(limit)
@@ -107,7 +107,7 @@ export async function getTickets(limit = 50) {
   return data ?? [];
 }
 
-const reportTicketSelection = "id, ticket_no, title, status, priority, impact, urgency, request_type, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, updated_at, resolved_at, first_response_at";
+const reportTicketSelection = "id, ticket_no, title, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_procurement_in_scope, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at";
 
 export async function getServiceTeams({ inScopeOnly = false }: { inScopeOnly?: boolean } = {}): Promise<ServiceTeam[]> {
   const supabase = await createClient();
@@ -182,7 +182,7 @@ export async function getTicket(id: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("tickets")
-    .select("id, ticket_no, title, description, status, priority, impact, urgency, is_confidential, request_type, requester_id, assigned_to, service_team_id, resolution_notes, due_date, created_at, resolved_at, first_response_at, updated_at")
+    .select("id, ticket_no, title, description, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, is_confidential, request_type, service_category, ccg_request_type, ccg_request_scope, ccg_procurement_in_scope, requester_id, assigned_to, service_team_id, service_team:service_teams(id, name, slug), resolution_notes, due_date, created_at, reopened_at, resolved_at, first_response_at, updated_at")
     .eq("id", id)
     .single<Ticket>();
 

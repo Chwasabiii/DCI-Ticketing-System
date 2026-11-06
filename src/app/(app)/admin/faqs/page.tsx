@@ -9,7 +9,7 @@ export default async function AdminFaqsPage() {
   const isAdmin = profile?.user_side === "admin" && profile.status === "active";
   const isFaqProvider = profile?.user_side === "employee"
     && profile.status === "active"
-    && (profile.service_team?.slug === "it-support" || profile.service_team?.slug === "cost-control");
+    && ["it-support", "cost-control", "software-csr"].includes(profile.service_team?.slug ?? "");
   if (!isAdmin && !isFaqProvider) {
     redirect("/dashboard");
   }
@@ -17,7 +17,7 @@ export default async function AdminFaqsPage() {
   const supabase = await createClient();
   let query = supabase
     .from("faq_entries")
-    .select("id, service_team_id, question, answer, display_order, is_published, updated_at")
+    .select("id, service_team_id, source_ticket_id, question, answer, display_order, is_published, updated_at")
   if (isFaqProvider) query = query.eq("service_team_id", profile.service_team_id!);
   const { data, error } = await query.order("display_order").order("id").returns<FaqEntry[]>();
 

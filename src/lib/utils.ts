@@ -54,11 +54,17 @@ export function calculateTicketPriority(impact: TicketImpact, urgency: TicketUrg
   return matrix[impact][urgency];
 }
 
+export function needsTicketPriorityReview(ticket: Ticket) {
+  return !ticket.priority_reviewed_at
+    && (ticket.reported_impact === "high" || ticket.reported_urgency === "high");
+}
+
 export function getTicketSlaIndicators(ticket: Ticket, policies: TicketSlaPolicy[], now = Date.now()) {
   const priorityGroup = ticket.priority === "high" || ticket.priority === "urgent" ? "high" : "standard";
   const policy = policies.find((item) => item.priority_group === priorityGroup);
-  if (!policy || !ticket.created_at) return [] as Array<{ key: string; label: string; state: "warning" | "breached" }>;
-  const createdAt = Date.parse(ticket.created_at);
+  const slaStartedAt = ticket.reopened_at ?? ticket.created_at;
+  if (!policy || !slaStartedAt) return [] as Array<{ key: string; label: string; state: "warning" | "breached" }>;
+  const createdAt = Date.parse(slaStartedAt);
   if (!Number.isFinite(createdAt)) return [];
   const indicators: Array<{ key: string; label: string; state: "warning" | "breached" }> = [];
   const responseDeadline = addBusinessDays(createdAt, policy.first_response_business_days);

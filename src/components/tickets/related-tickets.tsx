@@ -33,7 +33,7 @@ export function RelatedTickets({
     try {
       const result = await linkRelatedTicket(form);
       if ("error" in result) {
-        setError(result.error);
+        setError(result.error ?? "The tickets could not be linked.");
         return;
       }
       formElement.reset();
@@ -57,7 +57,7 @@ export function RelatedTickets({
     try {
       const result = await unlinkRelatedTicket(form);
       if ("error" in result) {
-        setError(result.error);
+        setError(result.error ?? "The ticket link could not be removed.");
         return;
       }
       setNotice(result.success ?? "Ticket link removed.");

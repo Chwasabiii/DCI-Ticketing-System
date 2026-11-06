@@ -73,12 +73,16 @@ export function TicketActivityTimeline({
   initialActivity,
   currentUserId,
   allowInternalNotes,
+  canSubmitResolution,
+  isIncidentReport,
   actions
 }: {
   ticketId: string;
   initialActivity: TicketActivity[];
   currentUserId: string;
   allowInternalNotes: boolean;
+  canSubmitResolution: boolean;
+  isIncidentReport: boolean;
   actions: ReactNode;
 }) {
   const router = useRouter();
@@ -246,7 +250,12 @@ export function TicketActivityTimeline({
         </ol>
       )}
       <div className="mt-5 border-t border-slate-100 bg-slate-50/50 px-5 py-5 sm:px-6">
-        <TicketCommentForm ticketId={ticketId} allowInternalNotes={allowInternalNotes} />
+        <TicketCommentForm
+          ticketId={ticketId}
+          allowInternalNotes={allowInternalNotes}
+          canSubmitResolution={canSubmitResolution}
+          isIncidentReport={isIncidentReport}
+        />
       </div>
       {actions}
     </section>

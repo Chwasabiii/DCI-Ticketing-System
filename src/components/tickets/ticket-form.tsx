@@ -15,7 +15,17 @@ import {
   MAX_TICKET_ATTACHMENTS,
   uploadTicketAttachments
 } from "@/lib/attachments";
-import type { RequestType, SimilarTicket, TicketImpact, TicketUrgency } from "@/lib/types";
+import type { RequestType, ServiceCategory, SimilarTicket, TicketImpact, TicketUrgency } from "@/lib/types";
+import { deleteTicketDraft, readTicketDrafts, saveTicketDraft } from "@/lib/ticket-drafts";
+
+const serviceCategories: Array<{ value: ServiceCategory; label: string }> = [
+  { value: "hardware", label: "Hardware" },
+  { value: "software", label: "Software" },
+  { value: "network", label: "Network" },
+  { value: "microsoft", label: "Microsoft" },
+  { value: "security", label: "Security" },
+  { value: "other_services", label: "Other services" }
+];
 
 function fileSizeLabel(size: number) {
   return size >= 1024 * 1024
@@ -37,11 +47,56 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
   const [descriptionText, setDescriptionText] = useState("");
   const [similarTickets, setSimilarTickets] = useState<SimilarTicket[]>([]);
   const [checkingSimilar, setCheckingSimilar] = useState(false);
-  const [requestType, setRequestType] = useState<RequestType>("general");
+  const [requestType, setRequestType] = useState<RequestType>("service_request");
+  const [serviceCategory, setServiceCategory] = useState<ServiceCategory>("hardware");
+  const [ccgRequestType, setCcgRequestType] = useState("unit_rate");
+  const [ccgRequestScope, setCcgRequestScope] = useState("whole_boq");
+  const isCcg = teamSlug === "cost-control";
   const [message, setMessage] = useState<string | null>(null);
   const [createdTicketId, setCreatedTicketId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [draftId, setDraftId] = useState("");
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
   const priority = calculateTicketPriority(impact, urgency);
+
+  useEffect(() => {
+    const requestedId = new URLSearchParams(window.location.search).get("draft");
+    const drafts = readTicketDrafts();
+    const draft = requestedId ? drafts.find((item) => item.id === requestedId) : undefined;
+    const id = draft?.id ?? crypto.randomUUID();
+    setDraftId(id);
+    if (draft) {
+      setTitleText(draft.title);
+      setDescriptionText(draft.description);
+      setRequestType(draft.requestType as RequestType);
+      setServiceCategory(draft.serviceCategory as ServiceCategory);
+      setCcgRequestType(draft.ccgRequestType ?? "unit_rate");
+      setCcgRequestScope(draft.ccgRequestScope ?? "whole_boq");
+      setImpact(draft.impact as TicketImpact);
+      setUrgency(draft.urgency as TicketUrgency);
+    }
+    setDraftReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady || createdTicketId) return;
+    const timer = window.setTimeout(() => {
+      saveTicketDraft({
+      id: draftId, title: titleText, description: descriptionText, requestType,
+      serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestScope, updatedAt: new Date().toISOString()
+      });
+      setDraftSavedAt(new Date().toISOString());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [draftReady, draftId, titleText, descriptionText, requestType, serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestScope, createdTicketId]);
+
+  function saveDraftNow() {
+    if (!draftReady || !draftId) return;
+    const updatedAt = new Date().toISOString();
+    saveTicketDraft({ id: draftId, title: titleText, description: descriptionText, requestType, serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestScope, updatedAt });
+    setDraftSavedAt(updatedAt);
+  }
 
   useEffect(() => {
     if (titleText.trim().length < 8) {
@@ -95,6 +150,7 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
       }
 
       setCreatedTicketId(result.ticketId);
+      deleteTicketDraft(draftId);
       const uploadResult = await uploadTicketAttachments(
         result.ticketId,
         result.userId,
@@ -169,19 +225,37 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
   return (
     <form onSubmit={handleSubmit} className="grid min-w-0 gap-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-7">
       <input type="hidden" name="service_team_slug" value={teamSlug} />
+      {isCcg && <input type="hidden" name="service_category" value="other_services" />}
       <div className="grid min-w-0 gap-4 sm:grid-cols-2">
         <label className="grid min-w-0 gap-2">
           <span className="text-sm font-semibold text-slate-700">Ticket title <span className="text-urgent">*</span></span>
-        <input
-          name="title"
-          required
-          maxLength={200}
-          value={titleText}
-          onChange={(event) => setTitleText(event.target.value)}
-          className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
-          placeholder="e.g. Revised floor plans"
-        />
-      </label>
+          <input name="title" required maxLength={200} value={titleText} onChange={(event) => setTitleText(event.target.value)} className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring" placeholder={isCcg ? "e.g. Unit rate for office renovation" : "e.g. Revised floor plans"} />
+        </label>
+        {isCcg ? <>
+          <input type="hidden" name="request_type" value="service_request" />
+          <label className="grid min-w-0 gap-2">
+            <span className="text-sm font-semibold text-slate-700">CCG request type</span>
+            <select name="ccg_request_type" value={ccgRequestType} onChange={(event) => setCcgRequestType(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-ring">
+              <option value="unit_rate">Unit rate</option>
+              <option value="vendor_list">Vendor list</option>
+              <option value="tor_contracts">TOR / contracts</option>
+            </select>
+          </label>
+          <label className="grid min-w-0 gap-2">
+            <span className="text-sm font-semibold text-slate-700">Does this request include Procurement?</span>
+            <select name="ccg_procurement_in_scope" required className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-ring" defaultValue="false">
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
+          </label>
+          {ccgRequestType === "unit_rate" && <label className="grid min-w-0 gap-2">
+            <span className="text-sm font-semibold text-slate-700">Unit rate scope</span>
+            <select name="ccg_request_scope" required value={ccgRequestScope} onChange={(event) => setCcgRequestScope(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-ring">
+              <option value="whole_boq">Whole BOQ</option>
+              <option value="per_material">Per material / system</option>
+            </select>
+          </label>}
+        </> : <>
         <label className="grid min-w-0 gap-2">
           <span className="text-sm font-semibold text-slate-700">Request type</span>
           <select
@@ -190,26 +264,31 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
             onChange={(event) => setRequestType(event.target.value as RequestType)}
             className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
           >
-            <option value="general">General request</option>
+            <option value="service_request">Service request</option>
             <option value="access_request">Access request</option>
             <option value="incident_report">Incident report</option>
           </select>
         </label>
+        <label className="grid min-w-0 gap-2">
+          <span className="text-sm font-semibold text-slate-700">Service category</span>
+          <select
+            name="service_category"
+            value={serviceCategory}
+            onChange={(event) => setServiceCategory(event.target.value as ServiceCategory)}
+            className="min-h-11 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus-ring"
+          >
+            {serviceCategories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
+          </select>
+        </label>
+        <p className="-mt-2 text-xs leading-5 text-slate-500 sm:col-span-2">
+          {requestType === "incident_report"
+            ? "Choose the affected service. Incidents go through IT inspection and root cause analysis."
+            : requestType === "access_request"
+              ? "Choose the system or service you need access to."
+              : "Choose the service area that best matches the help you need."}
+        </p>
+        </>}
       </div>
-
-      <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-        <input
-          type="checkbox"
-          name="is_confidential"
-          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent"
-        />
-        <span>
-          <span className="block text-sm font-semibold text-slate-800">Confidential ticket</span>
-          <span className="mt-0.5 block text-xs leading-5 text-slate-600">
-            Visible only to you, assigned staff, and administrators.
-          </span>
-        </span>
-      </label>
 
       <div className="grid min-w-0 gap-4 md:grid-cols-2">
         <label className="grid min-w-0 gap-2 text-sm font-semibold text-slate-700">
@@ -229,8 +308,13 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
           </select>
         </label>
         <p className="rounded-xl bg-blue-50 px-4 py-3 text-sm text-blue-900 md:col-span-2">
-          Priority matrix result: <strong className="capitalize">{priority}</strong>. Priority is assigned from impact and urgency.
+          Requested priority: <strong className="capitalize">{priority}</strong>, based on your reported impact and urgency.
         </p>
+        {(impact === "high" || urgency === "high") && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950 md:col-span-2">
+            High impact or urgency is reviewed by the service team before it sets the ticket SLA. A single-user device issue, such as a keyboard problem, should usually be Low impact unless it blocks critical work.
+          </p>
+        )}
         <div className="md:col-span-2"><PriorityMatrixGuide /></div>
       </div>
 
@@ -244,12 +328,17 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
           onChange={(event) => setDescriptionText(event.target.value)}
           rows={5}
           className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm focus-ring"
-          placeholder={
-            requestType === "access_request"
+          placeholder={isCcg
+            ? ccgRequestType === "unit_rate"
+              ? "Include the project, BOQ or material/system, quantities, location, and required date."
+              : ccgRequestType === "vendor_list"
+                ? "Describe the materials or system, project location, and any vendor criteria or required date."
+                : "Identify the TOR / contract type, project, and reference or sample you need."
+            : requestType === "access_request"
               ? "Describe the system, project, or files you need access to and why."
               : requestType === "incident_report"
-                ? "Describe what happened, when it happened, and who or what was affected."
-                : "Describe the project, drawing/document reference, deadline, and expected output."
+                ? "Describe what happened, when it happened, which service was affected, and any steps already taken."
+                : "Describe the service you need, the outcome you expect, and any relevant deadline or reference."
           }
         />
       </label>
@@ -378,6 +467,10 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
         </Link>
       )}
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
+        <Button type="button" variant="secondary" disabled={!draftReady || Boolean(createdTicketId)} onClick={saveDraftNow} className="sm:w-fit">
+          <span>Save draft</span>
+        </Button>
+        {draftSavedAt && <span role="status" className="text-xs text-slate-500">Draft saved at {new Date(draftSavedAt).toLocaleTimeString()} on this device.</span>}
         <Button type="submit" loading={isSubmitting} disabled={Boolean(createdTicketId)} className="sm:w-fit">
           <Send className="h-4 w-4" />
           {isSubmitting ? "Opening ticket..." : "Open ticket"}

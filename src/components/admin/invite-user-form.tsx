@@ -89,7 +89,7 @@ export function InviteUserForm({
             onChange={(event) => setUserSide(event.target.value as UserSide)}
             className="min-h-11 rounded-xl border border-slate-200 px-3 py-2 text-sm focus-ring"
           >
-            <option value="client">End user</option>
+            <option value="client">Employee</option>
             <option value="employee">Service provider</option>
             <option value="admin">Admin</option>
           </select>

@@ -163,7 +163,7 @@ export function UserManagement({
               Account type
               <select value={sideFilter} onChange={(event) => { setSideFilter(event.target.value); setPage(1); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-800 transition-shadow focus-ring">
                 <option value="all">All types</option>
-                <option value="client">End user</option>
+                <option value="client">Employee</option>
                 <option value="employee">Service provider</option>
                 <option value="admin">Admin</option>
               </select>
@@ -325,7 +325,7 @@ function EditManagedUserForm({
         <label className="grid gap-2 text-sm font-semibold text-slate-700">
           Account type
           <select name="user_side" value={side} onChange={(event) => setSide(event.target.value as UserSide)} disabled={saving} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring">
-            <option value="client">End user</option>
+            <option value="client">Employee</option>
             <option value="employee">Service provider</option>
             <option value="admin">Admin</option>
           </select>
@@ -364,7 +364,7 @@ function EditManagedUserForm({
 }
 
 function accountTypeLabel(side: UserSide) {
-  if (side === "client") return "End user";
+  if (side === "client") return "Employee";
   if (side === "employee") return "Service provider";
   return "Admin";
 }

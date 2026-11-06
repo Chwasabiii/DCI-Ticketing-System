@@ -28,7 +28,7 @@ export function NotificationFeed({
       formData.set("notification_id", String(notification.id));
       try {
         const result = await markNotificationRead(formData);
-        if ("error" in result) setError(result.error);
+        if ("error" in result) setError(result.error ?? "The notification could not be marked as read.");
       } catch {
         setError("The notification could not be marked as read.");
       }
@@ -43,7 +43,7 @@ export function NotificationFeed({
     setError(null);
     try {
       const result = await markAllNotificationsRead();
-      if ("error" in result) setError(result.error);
+      if ("error" in result) setError(result.error ?? "Notifications could not be marked as read.");
       else router.refresh();
     } catch {
       setError("Notifications could not be marked as read.");

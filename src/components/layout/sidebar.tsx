@@ -52,13 +52,13 @@ export function Sidebar({ items }: { items: NavItem[] }) {
         }
       }}
       className={cn(
-        "hidden overflow-hidden border-r border-slate-200/80 bg-white md:sticky md:top-0 md:flex md:h-screen md:flex-col md:transition-[width] md:duration-[360ms] md:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:md:transition-none",
+        "hidden overflow-hidden bg-white md:sticky md:top-0 md:flex md:h-screen md:flex-col md:transition-[width] md:duration-[360ms] md:ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:md:transition-none",
         expanded ? "md:w-[17rem]" : "md:w-[5.25rem]"
       )}
     >
       <div
         className={cn(
-          "flex h-[4.5rem] shrink-0 items-center border-b border-slate-100 transition-[gap,padding] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          "flex h-[4.5rem] shrink-0 items-center transition-[gap,padding] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
           expanded ? "gap-3 px-5" : "justify-center gap-0 px-3"
         )}
       >
@@ -117,16 +117,22 @@ export function Sidebar({ items }: { items: NavItem[] }) {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "group flex min-h-11 items-center rounded-xl text-[13px] font-semibold text-slate-600 transition-[gap,padding,background-color,color] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none hover:bg-slate-50 hover:text-navy",
+                "group flex min-h-11 items-center rounded-xl text-[13px] font-semibold text-slate-600 transition-[gap,padding,background-color,color,box-shadow,transform] duration-[200ms] ease-out motion-reduce:transition-none hover:bg-slate-50 hover:text-navy",
                 expanded ? "gap-3 px-3" : "justify-center gap-0 px-0",
-                item.href === "/tickets/new" && "mt-2 min-h-12 bg-accent text-white shadow-sm hover:bg-blue-700 hover:text-white",
+                item.href === "/tickets/new" && "mt-2 min-h-12 border border-blue-500/20 bg-gradient-to-r from-[#3969e8] to-[#3159c8] text-white shadow-[0_5px_14px_rgba(49,89,200,0.24)] hover:-translate-y-0.5 hover:from-[#315fd9] hover:to-[#294eaf] hover:text-white hover:shadow-[0_8px_18px_rgba(49,89,200,0.3)] active:translate-y-0",
                 item.href === "/tickets/new" && expanded && "mb-4",
                 active && item.href !== "/tickets/new" && "bg-blue-50 text-accent",
                 active && item.href === "/tickets/new" && "ring-2 ring-blue-100"
               )}
               title={!expanded ? item.label : undefined}
             >
-              <Icon className={cn("h-[18px] w-[18px] shrink-0", active && item.href !== "/tickets/new" && "text-accent")} />
+              {item.href === "/tickets/new" ? (
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15 ring-1 ring-inset ring-white/20 transition-colors group-hover:bg-white/20">
+                  <Icon className="h-[18px] w-[18px]" />
+                </span>
+              ) : (
+                <Icon className={cn("h-[18px] w-[18px] shrink-0", active && "text-accent")} />
+              )}
               <span
                 aria-hidden={!expanded}
                 className={cn(

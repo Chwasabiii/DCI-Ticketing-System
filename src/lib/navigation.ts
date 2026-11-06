@@ -42,9 +42,9 @@ export function getNavItems(
       { label: "IT Support", href: "/it-support", icon: "inbox" },
       { label: "Cost Control Group", href: "/cost-control", icon: "clipboard" },
       { label: "Dashboard", href: "/dashboard", icon: "home" },
-      { label: "Open a Ticket", href: "/tickets/new", icon: "plus" },
       { label: "My Tickets", href: "/tickets", icon: "clipboard" },
       { label: "FAQs", href: "/faqs", icon: "clipboard" },
+      { label: "Open a Ticket", href: "/tickets/new", icon: "plus" },
     ];
   }
 
@@ -54,6 +54,7 @@ export function getNavItems(
       { label: "Triage Inbox", href: "/inbox", icon: "inbox" },
       { label: "FAQs", href: "/faqs", icon: "clipboard" },
       { label: "All Tickets", href: "/tickets", icon: "clipboard" },
+      { label: "RACI Matrix", href: "/raci", icon: "workflow" },
       { label: "SLA Targets", href: "/admin/sla", icon: "clock" },
       { label: "Users", href: "/admin/users", icon: "users" },
       { label: "Manage FAQs", href: "/admin/faqs", icon: "clipboard" },
@@ -61,9 +62,11 @@ export function getNavItems(
   }
 
   const items: NavItem[] = [
-    { label: serviceTeamSlug === "cost-control" ? "CCG Dashboard" : "IT Support Dashboard", href: "/dashboard", icon: "home" },
+    { label: serviceTeamSlug === "cost-control" ? "CCG Dashboard" : serviceTeamSlug === "software-csr" ? "Software CSR Dashboard" : "IT Support Dashboard", href: "/dashboard", icon: "home" },
     { label: "Triage Inbox", href: "/inbox", icon: "inbox" },
-    { label: "FAQs", href: "/faqs", icon: "clipboard" }
+    { label: "KPI Score", href: "/performance", icon: "bar-chart" },
+    { label: "FAQs", href: "/faqs", icon: "clipboard" },
+    { label: "RACI Matrix", href: "/raci", icon: "workflow" }
   ];
 
   if (roles.includes("Coordinator")) items.push({ label: "Workload", href: "/workload", icon: "bar-chart" });
@@ -72,7 +75,7 @@ export function getNavItems(
     items.push({ label: "Reports", href: "/reports", icon: "file-chart" });
   }
 
-  if (serviceTeamSlug === "it-support" || serviceTeamSlug === "cost-control") {
+  if (["it-support", "cost-control", "software-csr"].includes(serviceTeamSlug ?? "")) {
     items.push({ label: "Manage FAQs", href: "/admin/faqs", icon: "clipboard" });
   }
 

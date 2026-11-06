@@ -8,17 +8,18 @@ import { bulkUpdateTickets } from "@/lib/actions";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import type { Profile, Ticket, TicketSlaPolicy } from "@/lib/types";
-import { getTicketSlaIndicators, isTicketOverdue } from "@/lib/utils";
+import { getTicketSlaIndicators, isTicketOverdue, needsTicketPriorityReview } from "@/lib/utils";
 
-type TriageView = "all" | "unassigned" | "mine" | "overdue";
-type SavedView = { id: string; name: string; view: TriageView; priority: string; status: string };
+type TriageView = "all" | "unassigned" | "mine" | "overdue" | "resolved";
+type SavedView = { id: string; name: string; view: TriageView; priority: string; status: string; priorityReview: string };
 const savedViewsStorageKey = "pmsg-triage-saved-views-v1";
 
 const views: Array<{ id: TriageView; label: string }> = [
   { id: "all", label: "All active" },
   { id: "unassigned", label: "Unassigned" },
   { id: "mine", label: "Assigned to me" },
-  { id: "overdue", label: "Overdue" }
+  { id: "overdue", label: "Overdue" },
+  { id: "resolved", label: "Resolved" }
 ];
 
 const activeStatuses = new Set([
@@ -31,6 +32,8 @@ export function TicketTriageInbox({
   employees = [],
   canAssign = false,
   canChangeStatus = false,
+  canBulkChangeStatus = false,
+  canClaim = false,
   initialView = "all"
 }: {
   tickets: Ticket[];
@@ -39,6 +42,8 @@ export function TicketTriageInbox({
   employees?: Profile[];
   canAssign?: boolean;
   canChangeStatus?: boolean;
+  canBulkChangeStatus?: boolean;
+  canClaim?: boolean;
   initialView?: TriageView;
 }) {
   const router = useRouter();
@@ -46,6 +51,7 @@ export function TicketTriageInbox({
   const [view, setView] = useState<TriageView>(initialView);
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityReviewFilter, setPriorityReviewFilter] = useState("all");
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [saveName, setSaveName] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -57,7 +63,7 @@ export function TicketTriageInbox({
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(savedViewsStorageKey) ?? "[]") as SavedView[];
-      setSavedViews(Array.isArray(stored) ? stored.filter((item) => item && typeof item.id === "string" && typeof item.name === "string" && views.some((option) => option.id === item.view)).map((item) => ({ ...item, priority: item.priority ?? "all", status: item.status ?? "all" })) : []);
+      setSavedViews(Array.isArray(stored) ? stored.filter((item) => item && typeof item.id === "string" && typeof item.name === "string" && views.some((option) => option.id === item.view)).map((item) => ({ ...item, priority: item.priority ?? "all", status: item.status ?? "all", priorityReview: item.priorityReview ?? "all" })) : []);
     } catch { setSavedViews([]); }
   }, []);
 
@@ -69,7 +75,7 @@ export function TicketTriageInbox({
   function saveCurrentView() {
     const name = saveName.trim();
     if (!name || (savedViews.length >= 10 && !savedViews.some((item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase()))) return;
-    const next = [...savedViews.filter((item) => item.name.toLocaleLowerCase() !== name.toLocaleLowerCase()), { id: crypto.randomUUID(), name, view, priority: priorityFilter, status: statusFilter }];
+    const next = [...savedViews.filter((item) => item.name.toLocaleLowerCase() !== name.toLocaleLowerCase()), { id: crypto.randomUUID(), name, view, priority: priorityFilter, status: statusFilter, priorityReview: priorityReviewFilter }];
     persistSavedViews(next);
     setSaveName("");
   }
@@ -110,6 +116,9 @@ export function TicketTriageInbox({
 
   function belongsInView(ticket: Ticket, target: TriageView) {
     const active = activeStatuses.has(ticket.status);
+    if (target === "resolved") {
+      return ["resolved", "closed"].includes(ticket.status);
+    }
     if (target === "all") return active;
     if (target === "unassigned") {
       return active && !ticket.assigned_to;
@@ -121,8 +130,9 @@ export function TicketTriageInbox({
   const statusOptions = Array.from(new Set(tickets.filter((ticket) => activeStatuses.has(ticket.status)).map((ticket) => ticket.status))).sort();
   const visibleTickets = tickets.filter((ticket) => belongsInView(ticket, view)
     && (priorityFilter === "all" || ticket.priority === priorityFilter)
+    && (priorityReviewFilter === "all" || needsTicketPriorityReview(ticket))
     && (statusFilter === "all" || ticket.status === statusFilter));
-  const bulkSelectableTickets = visibleTickets;
+  const bulkSelectableTickets = visibleTickets.filter((ticket) => activeStatuses.has(ticket.status));
   const nextActions: Record<string, string> = Object.fromEntries(tickets.map((ticket): [string, string] => {
     let action = "Review request";
     if (ticket.status === "waiting_for_info") {
@@ -145,7 +155,7 @@ export function TicketTriageInbox({
     <section className="space-y-4">
       <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-5">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-wider text-slate-400">Saved views</p><div className="mt-2 flex flex-wrap gap-2">{savedViews.length ? savedViews.map((saved) => <span key={saved.id} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 ${view === saved.view && priorityFilter === saved.priority && statusFilter === saved.status ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}><button type="button" onClick={() => { setView(saved.view); setPriorityFilter(saved.priority); setStatusFilter(saved.status); setSelectedIds([]); }} className="text-xs font-semibold text-slate-700 hover:text-accent">{saved.name}</button><button type="button" onClick={() => persistSavedViews(savedViews.filter((item) => item.id !== saved.id))} aria-label={`Remove saved view ${saved.name}`} className="rounded p-0.5 text-slate-400 hover:bg-white hover:text-urgent"><Trash2 className="h-3 w-3" /></button></span>) : <span className="text-xs text-slate-500">Save frequently used inbox filters for quick access.</span>}</div></div>
+          <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-wider text-slate-400">Saved views</p><div className="mt-2 flex flex-wrap gap-2">{savedViews.length ? savedViews.map((saved) => <span key={saved.id} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 ${view === saved.view && priorityFilter === saved.priority && statusFilter === saved.status && priorityReviewFilter === saved.priorityReview ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}><button type="button" onClick={() => { setView(saved.view); setPriorityFilter(saved.priority); setStatusFilter(saved.status); setPriorityReviewFilter(saved.priorityReview); setSelectedIds([]); }} className="text-xs font-semibold text-slate-700 hover:text-accent">{saved.name}</button><button type="button" onClick={() => persistSavedViews(savedViews.filter((item) => item.id !== saved.id))} aria-label={`Remove saved view ${saved.name}`} className="rounded p-0.5 text-slate-400 hover:bg-white hover:text-urgent"><Trash2 className="h-3 w-3" /></button></span>) : <span className="text-xs text-slate-500">Save frequently used inbox filters for quick access.</span>}</div></div>
           <div className="flex w-full gap-2 sm:w-auto"><input value={saveName} maxLength={40} onChange={(event) => setSaveName(event.target.value)} placeholder="Name this view" aria-label="Saved view name" className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-200 px-3 text-sm focus-ring sm:w-44" /><button type="button" onClick={saveCurrentView} disabled={!saveName.trim() || (savedViews.length >= 10 && !savedViews.some((item) => item.name.toLocaleLowerCase() === saveName.trim().toLocaleLowerCase()))} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Bookmark className="h-4 w-4" /><span className="hidden sm:inline">Save current</span><span className="sm:hidden">Save</span></button></div>
         </div>
       </div>
@@ -171,21 +181,22 @@ export function TicketTriageInbox({
           );
         })}
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         <label className="grid gap-1 text-xs font-semibold text-slate-600">Priority<select value={priorityFilter} onChange={(event) => { setPriorityFilter(event.target.value); setSelectedIds([]); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring"><option value="all">All priorities</option>{["urgent", "high", "medium", "low"].map((priority) => <option key={priority} value={priority}>{priority}</option>)}</select></label>
         <label className="grid gap-1 text-xs font-semibold text-slate-600">Status<select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setSelectedIds([]); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring"><option value="all">All active statuses</option>{statusOptions.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
+        <label className="grid gap-1 text-xs font-semibold text-slate-600">Priority review<select value={priorityReviewFilter} onChange={(event) => { setPriorityReviewFilter(event.target.value); setSelectedIds([]); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal focus-ring"><option value="all">All tickets</option><option value="needs_review">Needs review</option></select></label>
       </div>
       {bulkFeedback && <FeedbackMessage type={bulkFeedback.type}>{bulkFeedback.text}</FeedbackMessage>}
       {(canAssign || canChangeStatus) && bulkSelectableTickets.length > 0 && <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:p-4">
         <label className="flex min-h-9 items-center gap-2 text-sm font-semibold text-slate-700"><input type="checkbox" checked={bulkSelectableTickets.length > 0 && bulkSelectableTickets.slice(0, 50).every((ticket) => selectedIds.includes(String(ticket.id)))} onChange={(event) => setSelectedIds(event.target.checked ? bulkSelectableTickets.slice(0, 50).map((ticket) => String(ticket.id)) : selectedIds.filter((id) => !bulkSelectableTickets.slice(0, 50).some((ticket) => String(ticket.id) === id)))} className="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" />Select up to 50 visible</label>
         {selectedIds.length > 0 && <span className="text-xs text-slate-500">{selectedIds.length} selected (up to 50)</span>}
         {selectedIds.length > 0 && canAssign && <div className="flex min-w-0 flex-1 gap-2"><select value={bulkAssignee} onChange={(event) => setBulkAssignee(event.target.value)} aria-label="Assign selected tickets to" className="min-h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm focus-ring"><option value="">Unassigned</option>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name || employee.email || "Employee"}</option>)}</select><button type="button" onClick={() => applyBulk("assign")} disabled={bulkPending || selectedIds.length > 50} className="min-h-9 rounded-lg bg-navy px-3 text-xs font-semibold text-white disabled:opacity-50">Assign</button></div>}
-        {selectedIds.length > 0 && canChangeStatus && <div className="flex min-w-0 flex-1 gap-2"><select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value)} aria-label="Set selected ticket status" className="min-h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm focus-ring">{["under_review", "assigned", "in_progress", "waiting_for_info", "resolved"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select><button type="button" onClick={() => applyBulk("status")} disabled={bulkPending || selectedIds.length > 50} className="min-h-9 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 disabled:opacity-50">Update</button></div>}
+        {selectedIds.length > 0 && canBulkChangeStatus && <div className="flex min-w-0 flex-1 gap-2"><select value={bulkStatus} onChange={(event) => setBulkStatus(event.target.value)} aria-label="Set selected ticket status" className="min-h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-sm focus-ring">{["under_review", "assigned", "in_progress", "waiting_for_info", "resolved"].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select><button type="button" onClick={() => applyBulk("status")} disabled={bulkPending || selectedIds.length > 50} className="min-h-9 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 disabled:opacity-50">Update</button></div>}
       </div>}
       <TicketTable
         tickets={visibleTickets}
         nextActions={nextActions}
-        queueActions={{ employees, canAssign, canChangeStatus }}
+        queueActions={{ employees, canAssign, canChangeStatus, canClaim, currentUserId }}
         selectedIds={selectedIds}
         selectableIds={bulkSelectableTickets.map((ticket) => String(ticket.id))}
         onToggleSelection={(id) => setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length >= 50 ? current : [...current, id])}

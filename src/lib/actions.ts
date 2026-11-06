@@ -69,6 +69,13 @@ async function getActiveTicketActor(supabase: Awaited<ReturnType<typeof createCl
   return { profile, roles } as const;
 }
 
+async function isItSupportProvider(supabase: Awaited<ReturnType<typeof createClient>>, actor: { user_side: UserSide; service_team_id?: number | null }) {
+  if (actor.user_side !== "employee" || !actor.service_team_id) return false;
+  const { data } = await supabase.from("service_teams").select("id")
+    .eq("id", actor.service_team_id).eq("slug", "it-support").eq("is_active", true).maybeSingle();
+  return Boolean(data);
+}
+
 export async function signIn(_: unknown, formData: FormData) {
   const email = value(formData, "email");
   const password = value(formData, "password");
@@ -105,6 +112,38 @@ export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
+}
+
+export async function updateOwnDisplayName(formData: FormData) {
+  const fullName = value(formData, "full_name");
+  if (!fullName || fullName.length > 200) return { error: "Enter a display name up to 200 characters." };
+  const supabase = await createClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) return { error: "Sign in to update your profile." };
+  const { data: profile, error: profileError } = await supabase.from("profiles")
+    .select("full_name_change_used, status").eq("id", user.id).maybeSingle();
+  if (profileError || !profile || profile.status !== "active") return { error: "Could not verify your active profile." };
+  if (profile.full_name_change_used) return { error: "Your one-time display name change has already been used." };
+  const { error } = await supabase.rpc("change_own_display_name", { p_full_name: fullName });
+  if (error) return { error: error.message.includes("already used") ? "Your one-time display name change has already been used." : `Could not update display name: ${error.message}` };
+  revalidatePath("/settings");
+  revalidatePath("/dashboard");
+  revalidatePath("/tickets");
+  return { success: true };
+}
+
+export async function updateOwnPassword(formData: FormData) {
+  const password = formData.get("password");
+  const confirmation = formData.get("confirm_password");
+  if (typeof password !== "string" || password.length < 8 || password.length > 128) return { error: "Choose a password between 8 and 128 characters." };
+  if (password !== confirmation) return { error: "The passwords do not match." };
+  const supabase = await createClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) return { error: "Sign in to update your password." };
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { error: `Could not update password: ${error.message}` };
+  revalidatePath("/settings");
+  return { success: true };
 }
 
 export async function inviteUser(formData: FormData) {
@@ -333,7 +372,7 @@ export async function completeInvitation(formData: FormData) {
 
 export async function updateManagedUser(formData: FormData) {
   const context = await getAdminMutationContext();
-  if ("error" in context) return context;
+  if (context.error || !context.adminClient) return { error: context.error ?? "Administrator access is unavailable." };
 
   const userId = value(formData, "user_id");
   const requestedSide = value(formData, "user_side");
@@ -426,7 +465,7 @@ export async function updateManagedUser(formData: FormData) {
 
 async function setManagedUserStatus(formData: FormData, status: "active" | "inactive") {
   const context = await getAdminMutationContext();
-  if ("error" in context) return context;
+  if (context.error || !context.adminClient) return { error: context.error ?? "Administrator access is unavailable." };
 
   const userId = value(formData, "user_id");
   if (!isUuid(userId)) return { error: "Choose a valid account." };
@@ -515,9 +554,15 @@ export async function createTicket(formData: FormData) {
   const title = value(formData, "title");
   const description = value(formData, "description");
   const teamSlug = value(formData, "service_team_slug") ?? "it-support";
-  const requestedType = value(formData, "request_type") ?? "general";
-  const requestTypes = ["general", "access_request", "incident_report"] as const;
+  const ccgRequestType = value(formData, "ccg_request_type");
+  const ccgRequestScope = value(formData, "ccg_request_scope");
+  const ccgProcurementInScope = value(formData, "ccg_procurement_in_scope");
+  const requestedType = value(formData, "request_type") ?? "service_request";
+  const requestTypes = ["service_request", "access_request", "incident_report"] as const;
   const requestType = requestTypes.find((option) => option === requestedType);
+  const requestedCategory = value(formData, "service_category") ?? "";
+  const serviceCategories = ["hardware", "software", "network", "microsoft", "security", "other_services"] as const;
+  const serviceCategory = serviceCategories.find((option) => option === requestedCategory);
   const impacts: TicketImpact[] = ["low", "medium", "high"];
   const urgencies: TicketUrgency[] = ["low", "medium", "high"];
   const impact = impacts.find((option) => option === value(formData, "impact"));
@@ -530,8 +575,12 @@ export async function createTicket(formData: FormData) {
     return { error: "Keep the title to 200 characters and the request details to 10,000 characters or fewer." };
   }
   if (!requestType) return { error: "Choose a valid request type." };
+  if (!serviceCategory) return { error: "Choose a valid service category." };
   if (!impact || !urgency) return { error: "Choose a valid impact and urgency." };
-  const priority = calculateTicketPriority(impact, urgency);
+  const needsPriorityReview = impact === "high" || urgency === "high";
+  const effectiveImpact: TicketImpact = needsPriorityReview ? "medium" : impact;
+  const effectiveUrgency: TicketUrgency = needsPriorityReview ? "medium" : urgency;
+  const priority = calculateTicketPriority(effectiveImpact, effectiveUrgency);
 
   const { data: serviceTeam, error: teamError } = await supabase.from("service_teams")
     .select("id, slug, is_in_scope, is_active")
@@ -539,8 +588,12 @@ export async function createTicket(formData: FormData) {
   if (teamError || !serviceTeam?.is_active || !serviceTeam.is_in_scope) {
     return { error: "Choose an active service team." };
   }
-  if (serviceTeam.slug !== "it-support") {
-    return { error: "Cost Control Group ticket submission will be available when its workflow is defined." };
+  if (serviceTeam.slug !== "it-support" && serviceTeam.slug !== "cost-control") return { error: "Choose an available service team." };
+  if (serviceTeam.slug === "cost-control" && ccgProcurementInScope !== "false") {
+    return { error: "CCG cannot accept requests that include Procurement in their scope. Please contact the Procurement team." };
+  }
+  if (serviceTeam.slug === "cost-control" && (!(["unit_rate", "vendor_list", "tor_contracts"].includes(ccgRequestType ?? "")) || (ccgRequestType === "unit_rate" && !["whole_boq", "per_material"].includes(ccgRequestScope ?? "")))) {
+    return { error: "Choose a CCG request type and, for unit rates, whether you need a whole BOQ or per material." };
   }
 
   const { data: ticket, error } = await supabase
@@ -551,8 +604,15 @@ export async function createTicket(formData: FormData) {
       requester_id: user.id,
       service_team_id: serviceTeam.id,
       request_type: requestType,
-      impact,
-      urgency,
+      service_category: serviceCategory,
+      ccg_request_type: serviceTeam.slug === "cost-control" ? ccgRequestType : null,
+      ccg_request_scope: serviceTeam.slug === "cost-control" && ccgRequestType === "unit_rate" ? ccgRequestScope : null,
+      ccg_procurement_in_scope: serviceTeam.slug === "cost-control" ? false : null,
+      impact: effectiveImpact,
+      urgency: effectiveUrgency,
+      reported_impact: impact,
+      reported_urgency: urgency,
+      priority_reviewed_at: needsPriorityReview ? null : new Date().toISOString(),
       is_confidential: formData.get("is_confidential") === "on",
       priority,
       status: "open"
@@ -571,6 +631,7 @@ export async function createTicket(formData: FormData) {
 
   revalidatePath("/tickets");
   revalidatePath("/dashboard");
+  revalidatePath("/cost-control");
   return { ticketId: String(ticket.id), userId: user.id };
 }
 
@@ -579,7 +640,7 @@ export async function linkRelatedTicket(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to link related tickets." };
   const actor = await getActiveTicketActor(supabase, user.id);
-  if ("error" in actor) return actor;
+  if (actor.error) return { error: actor.error };
   if (actor.profile.user_side === "client") {
     return { error: "Only staff can link related tickets." };
   }
@@ -622,7 +683,7 @@ export async function unlinkRelatedTicket(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to unlink tickets." };
   const actor = await getActiveTicketActor(supabase, user.id);
-  if ("error" in actor) return actor;
+  if (actor.error) return { error: actor.error };
   if (actor.profile.user_side === "client") return { error: "Only staff can unlink tickets." };
 
   const ticketId = value(formData, "ticket_id");
@@ -688,7 +749,7 @@ export async function submitTicketFeedback(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to rate this support experience." };
   const actor = await getActiveTicketActor(supabase, user.id);
-  if ("error" in actor) return actor;
+  if (actor.error) return { error: actor.error };
   if (actor.profile.user_side !== "client") {
     return { error: "Only the ticket requester can submit feedback." };
   }
@@ -737,7 +798,7 @@ export async function updateTicketStatus(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to update this ticket." };
   const actor = await getActiveTicketActor(supabase, user.id);
-  if ("error" in actor) return actor;
+  if (actor.error) return { error: actor.error };
 
   const ticketId = value(formData, "ticket_id");
   const requestedStatus = value(formData, "status");
@@ -756,7 +817,26 @@ export async function updateTicketStatus(formData: FormData) {
   if (!ticketId || !status) return { error: "Choose a valid ticket status." };
 
   if (actor.profile.user_side === "client") {
-    if (status !== "closed") return { error: "Clients can only confirm completion of their own resolved tickets." };
+    if (status === "open") {
+      const reason = value(formData, "reopen_reason");
+      if (!/^\d+$/.test(ticketId) || !reason || reason.length < 5 || reason.length > 1000) {
+        return { error: "Explain what still needs attention (5 to 1,000 characters)." };
+      }
+      const { data: reopened, error } = await supabase.rpc("reopen_own_ticket", {
+        p_ticket_id: Number(ticketId),
+        p_reason: reason
+      });
+      if (error) return { error: error.message };
+      if (reopened !== true) return { error: "Only your own resolved or closed ticket can be reopened." };
+      revalidatePath(`/tickets/${ticketId}`);
+      revalidatePath("/tickets");
+      revalidatePath("/dashboard");
+      revalidatePath("/inbox");
+      revalidatePath("/queue");
+      revalidatePath("/overdue");
+      return { success: "Ticket reopened. The support team has been notified." };
+    }
+    if (status !== "closed") return { error: "You can only confirm completion or reopen your own ticket." };
     const { data: closed, error } = await supabase.rpc("close_own_resolved_ticket", {
       p_ticket_id: Number(ticketId)
     });
@@ -768,18 +848,50 @@ export async function updateTicketStatus(formData: FormData) {
     revalidatePath("/inbox");
     return { success: "Ticket marked as complete." };
   }
+  const itSupportProvider = await isItSupportProvider(supabase, actor.profile);
   if (
     actor.profile.user_side !== "admin" &&
-    !actor.roles.includes("Personnel")
+    !itSupportProvider &&
+    !actor.roles.includes("Personnel") &&
+    !actor.roles.includes("Coordinator")
   ) {
-    return { error: "Only Personnel or administrators can update ticket status." };
+    return { error: "Only Personnel, Coordinators, or administrators can update ticket status." };
+  }
+
+  const { data: ticketForResolution, error: ticketForResolutionError } = await supabase
+    .from("tickets")
+    .select("request_type, service_team_id, is_confidential, assigned_to, ccg_request_type, ccg_request_scope")
+    .eq("id", ticketId)
+    .maybeSingle();
+  if (ticketForResolutionError) return { error: ticketForResolutionError.message };
+  if (!ticketForResolution) return { error: "You do not have permission to update this ticket." };
+  if (
+    actor.profile.user_side === "employee" &&
+    (ticketForResolution.service_team_id !== actor.profile.service_team_id ||
+      (ticketForResolution.is_confidential && ticketForResolution.assigned_to !== user.id))
+  ) {
+    return { error: "You can only update tickets assigned to your service team. Confidential tickets require you to be the assignee." };
+  }
+  let resolutionNotes = value(formData, "resolution_notes");
+  const ccgDatabaseResult = value(formData, "ccg_database_result");
+  if (status === "resolved" && ticketForResolution.ccg_request_type && !resolutionNotes?.trim()) {
+    return { error: "Record the database result and the CCG response in the resolution summary before submitting it." };
+  }
+  if (status === "resolved" && ticketForResolution.ccg_request_type && !(ticketForResolution.ccg_request_type === "unit_rate" && ticketForResolution.ccg_request_scope === "whole_boq")) {
+    if (ccgDatabaseResult !== "available" && ccgDatabaseResult !== "unavailable") {
+      return { error: "Choose whether the requested item was available in the database." };
+    }
+    const cleanNotes = (resolutionNotes ?? "").replace(/(?:\r?\n)?Database check: (?:available|not available) in the CCG database\.?/gi, "").trim();
+    resolutionNotes = `${cleanNotes}${cleanNotes ? "\n\n" : ""}Database check: ${ccgDatabaseResult === "available" ? "available" : "not available"} in the CCG database.`;
+  }
+  if (status === "resolved" && ticketForResolution.request_type === "incident_report" && !resolutionNotes) {
+    return { error: "Document the root cause and resolution before completing an incident report." };
   }
 
   const update: { status: TicketStatus; resolution_notes?: string; resolved_at?: string | null } = { status };
   if (status === "resolved") update.resolved_at = new Date().toISOString();
   else update.resolved_at = null;
-  const resolutionNotes = value(formData, "resolution_notes");
-  if (status === "resolved" && resolutionNotes) {
+  if (resolutionNotes) {
     update.resolution_notes = resolutionNotes;
   }
 
@@ -797,7 +909,107 @@ export async function updateTicketStatus(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/queue");
   revalidatePath("/inbox");
+  revalidatePath("/cost-control");
   return { success: "Ticket status updated." };
+}
+
+export async function escalateIncidentToSoftwareCsr(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to escalate this incident." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if (actor.error) return { error: actor.error };
+  if (actor.profile.user_side !== "employee" || !actor.profile.service_team_id || !actor.roles.includes("Personnel")) {
+    return { error: "Only IT Support Personnel can escalate a software incident." };
+  }
+
+  const ticketId = value(formData, "ticket_id");
+  if (!ticketId || !/^\d+$/.test(ticketId) || !Number.isSafeInteger(Number(ticketId))) {
+    return { error: "Choose a valid ticket." };
+  }
+  const { data: ticket, error: ticketError } = await supabase
+    .from("tickets")
+    .select("request_type, service_category, status, resolution_notes")
+    .eq("id", ticketId)
+    .maybeSingle();
+  if (ticketError) return { error: ticketError.message };
+  if (!ticket || ticket.request_type !== "incident_report" || ticket.service_category !== "software" || ticket.status !== "in_progress") {
+    return { error: "Only software incidents in root cause analysis can be escalated." };
+  }
+  if (!ticket.resolution_notes?.trim()) {
+    return { error: "Save the inspection and root cause findings before escalating this incident." };
+  }
+
+  const { data: escalated, error } = await supabase.rpc("escalate_incident_to_software_csr", {
+    p_ticket_id: Number(ticketId)
+  });
+  if (error) return { error: error.message };
+  if (escalated !== true) return { error: "This software incident could not be escalated. Refresh the ticket and try again." };
+
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath("/tickets");
+  revalidatePath("/dashboard");
+  revalidatePath("/inbox");
+  revalidatePath("/queue");
+  revalidatePath("/performance");
+  return { success: "Incident escalated to the Software CSR team." };
+}
+
+export async function reviewTicketPriority(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to review ticket impact and urgency." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if (actor.error) return { error: actor.error };
+  if (actor.profile.user_side !== "employee" || !actor.profile.service_team_id || !actor.roles.includes("Personnel")) {
+    return { error: "Only service provider Personnel can review ticket priority." };
+  }
+
+  const ticketId = value(formData, "ticket_id");
+  if (!ticketId || !/^\d+$/.test(ticketId) || !Number.isSafeInteger(Number(ticketId))) {
+    return { error: "Choose a valid ticket." };
+  }
+  const impacts: TicketImpact[] = ["low", "medium", "high"];
+  const urgencies: TicketUrgency[] = ["low", "medium", "high"];
+  const impact = impacts.find((option) => option === value(formData, "impact"));
+  const urgency = urgencies.find((option) => option === value(formData, "urgency"));
+  if (!impact || !urgency) return { error: "Choose a valid impact and urgency." };
+
+  const { data: ticket, error: ticketError } = await supabase
+    .from("tickets")
+    .select("service_team_id, status")
+    .eq("id", ticketId)
+    .maybeSingle();
+  if (ticketError) return { error: ticketError.message };
+  if (!ticket || ticket.service_team_id !== actor.profile.service_team_id) {
+    return { error: "You can only review tickets for your service team." };
+  }
+  if (["resolved", "closed", "rejected"].includes(ticket.status)) {
+    return { error: "Priority can only be reviewed while a ticket is active." };
+  }
+
+  const { data, error } = await supabase
+    .from("tickets")
+    .update({
+      impact,
+      urgency,
+      priority: calculateTicketPriority(impact, urgency),
+      priority_reviewed_at: new Date().toISOString(),
+      priority_reviewed_by: user.id
+    })
+    .eq("id", ticketId)
+    .select("id")
+    .maybeSingle();
+  if (error) return { error: error.message };
+  if (!data) return { error: "The ticket priority could not be reviewed." };
+
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath("/tickets");
+  revalidatePath("/inbox");
+  revalidatePath("/dashboard");
+  revalidatePath("/reports");
+  revalidatePath("/performance");
+  return { success: `Priority reviewed as ${impact} impact and ${urgency} urgency.` };
 }
 
 export async function routeTicket(formData: FormData) {
@@ -807,9 +1019,11 @@ export async function routeTicket(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to route this ticket." };
   const actor = await getActiveTicketActor(supabase, user.id);
-  if ("error" in actor) return actor;
+  if (actor.error) return { error: actor.error };
+  const itSupportProvider = await isItSupportProvider(supabase, actor.profile);
   if (
     actor.profile.user_side !== "admin" &&
+    !itSupportProvider &&
     !actor.roles.includes("Coordinator")
   ) {
     return { error: "Only Coordinators or administrators can route tickets." };
@@ -876,7 +1090,9 @@ export async function routeTicket(formData: FormData) {
       assigned_to: assignedTo,
       due_date: dueDate,
       status,
-      resolved_at: status === "resolved" ? new Date().toISOString() : null
+      resolved_at: status === "resolved" ? new Date().toISOString() : null,
+      priority_reviewed_at: new Date().toISOString(),
+      priority_reviewed_by: user.id
     })
     .eq("id", ticketId)
     .select("id")
@@ -890,7 +1106,39 @@ export async function routeTicket(formData: FormData) {
   revalidatePath("/inbox");
   revalidatePath("/tickets");
   revalidatePath("/dashboard");
+  revalidatePath("/cost-control");
   return { success: "Ticket routing and assignment saved." };
+}
+
+export async function claimTeamTicket(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to claim a ticket." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if (actor.error) return { error: actor.error };
+  if (actor.profile.user_side !== "employee" || !actor.profile.service_team_id) {
+    return { error: "Only service providers with a team can claim tickets." };
+  }
+
+  const ticketId = value(formData, "ticket_id");
+  if (!ticketId || !/^\d+$/.test(ticketId) || !Number.isSafeInteger(Number(ticketId))) {
+    return { error: "Choose a valid ticket." };
+  }
+  const { data: claimed, error } = await supabase.rpc("claim_team_ticket", {
+    p_ticket_id: Number(ticketId)
+  });
+  if (error) return { error: error.message };
+  if (claimed !== true) {
+    return { error: "This ticket is no longer available to claim, or its SLA is not at risk." };
+  }
+
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath("/inbox");
+  revalidatePath("/tickets");
+  revalidatePath("/dashboard");
+  revalidatePath("/cost-control");
+  revalidatePath("/performance");
+  return { success: "Ticket assigned to you." };
 }
 
 export async function bulkUpdateTickets(formData: FormData) {
@@ -898,16 +1146,17 @@ export async function bulkUpdateTickets(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to update tickets." };
   const actor = await getActiveTicketActor(supabase, user.id);
-  if ("error" in actor) return actor;
+  if (actor.error) return { error: actor.error };
 
   const ids = Array.from(new Set(formData.getAll("ticket_ids")
     .filter((id): id is string => typeof id === "string" && /^\d+$/.test(id))));
   if (ids.length === 0 || ids.length > 50) return { error: "Select between 1 and 50 tickets." };
   const operation = value(formData, "operation");
+  const itSupportProvider = await isItSupportProvider(supabase, actor.profile);
   const patch: { assigned_to?: string | null; status?: TicketStatus; resolved_at?: string | null } = {};
 
   if (operation === "assign") {
-    if (actor.profile.user_side !== "admin" && !actor.roles.includes("Coordinator")) {
+    if (actor.profile.user_side !== "admin" && !itSupportProvider && !actor.roles.includes("Coordinator")) {
       return { error: "Only Coordinators or administrators can bulk assign tickets." };
     }
     const assigneeId = value(formData, "assigned_to");
@@ -929,7 +1178,7 @@ export async function bulkUpdateTickets(formData: FormData) {
     }
     patch.assigned_to = assigneeId;
   } else if (operation === "status") {
-    if (actor.profile.user_side !== "admin" && !actor.roles.includes("Personnel")) {
+    if (actor.profile.user_side !== "admin" && !itSupportProvider && !actor.roles.includes("Personnel")) {
       return { error: "Only Personnel or administrators can bulk update status." };
     }
     const status = value(formData, "status");
@@ -955,7 +1204,7 @@ export async function saveTicketSlaPolicies(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in as an administrator to manage SLA targets." };
   const actor = await getActiveTicketActor(supabase, user.id);
-  if ("error" in actor) return actor;
+  if (actor.error) return { error: actor.error };
   if (actor.profile.user_side !== "admin") return { error: "Only administrators can manage SLA targets." };
 
   const priorityGroups = ["high", "standard"] as const;
@@ -979,7 +1228,7 @@ export async function handoffTicket(formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "Sign in to hand off this ticket." };
   const actor = await getActiveTicketActor(supabase, user.id);
-  if ("error" in actor) return actor;
+  if (actor.error) return { error: actor.error };
   if (actor.profile.user_side !== "admin" && !actor.roles.includes("Coordinator")) {
     return { error: "Only Coordinators or administrators can hand off tickets." };
   }
@@ -1067,6 +1316,83 @@ export async function saveNotificationPreferences(formData: FormData) {
   return { success: "Notification preferences saved." };
 }
 
+export async function createFaqDraftFromTicket(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in to create an FAQ draft." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if (actor.error) return { error: actor.error };
+
+  const ticketId = value(formData, "ticket_id");
+  if (!ticketId || !/^\d+$/.test(ticketId) || !Number.isSafeInteger(Number(ticketId))) {
+    return { error: "Choose a valid ticket." };
+  }
+  const { data: ticket, error: ticketError } = await supabase
+    .from("tickets")
+    .select("id, ticket_no, title, status, is_confidential, service_team_id, resolution_notes")
+    .eq("id", Number(ticketId))
+    .maybeSingle();
+  if (ticketError) return { error: ticketError.message };
+  if (!ticket) return { error: "You cannot access this ticket." };
+  if (!ticket.service_team_id) return { error: "This ticket is not assigned to a service team." };
+  if (actor.profile.user_side === "employee" && actor.profile.service_team_id !== ticket.service_team_id) {
+    return { error: "You can only turn your own service team’s solutions into FAQs." };
+  }
+  if (ticket.is_confidential) {
+    return { error: "Confidential tickets cannot be converted into shared FAQ articles." };
+  }
+  if (!["resolved", "closed"].includes(ticket.status)) {
+    return { error: "Resolve the ticket before turning its solution into an FAQ draft." };
+  }
+  const answer = ticket.resolution_notes?.trim();
+  if (!answer) return { error: "Add a resolution summary before creating an FAQ draft." };
+  if (answer.length > 5000) return { error: "The resolution is longer than an FAQ answer. Shorten it before creating a draft." };
+
+  const { data: team, error: teamError } = await supabase
+    .from("service_teams")
+    .select("id, slug, is_active")
+    .eq("id", ticket.service_team_id)
+    .maybeSingle();
+  if (teamError) return { error: teamError.message };
+  if (!team?.is_active || !["it-support", "cost-control", "software-csr"].includes(team.slug)) {
+    return { error: "This service team is not enabled to manage FAQs." };
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("faq_entries")
+    .select("id")
+    .eq("source_ticket_id", Number(ticketId))
+    .maybeSingle();
+  if (existingError) return { error: existingError.message };
+  if (existing) {
+    return { success: "An FAQ draft already exists for this ticket. Open FAQ management to review it.", faqId: existing.id };
+  }
+
+  const title = ticket.title.trim();
+  const question = title.endsWith("?") ? title : `How can I resolve ${title}?`;
+  const { data: faq, error } = await supabase
+    .from("faq_entries")
+    .insert({
+      question,
+      answer,
+      display_order: 0,
+      is_published: false,
+      service_team_id: team.id,
+      source_ticket_id: Number(ticketId)
+    })
+    .select("id")
+    .single();
+  if (error) {
+    if (error.code === "23505") return { error: "An FAQ draft for this ticket already exists. Open FAQ management to review it." };
+    return { error: `FAQ draft could not be created: ${error.message}` };
+  }
+
+  revalidatePath(`/tickets/${ticketId}`);
+  revalidatePath("/faqs");
+  revalidatePath("/admin/faqs");
+  return { success: "Unpublished FAQ draft created. Review it in FAQ management before publishing.", faqId: faq.id };
+}
+
 export async function saveFaq(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -1085,11 +1411,11 @@ export async function saveFaq(formData: FormData) {
     if (!actor.service_team_id) return { error: "Your account is not assigned to an FAQ-enabled service team." };
     const { data: team } = await supabase.from("service_teams")
       .select("id").eq("id", actor.service_team_id).eq("is_active", true)
-      .in("slug", ["it-support", "cost-control"]).maybeSingle();
-    if (!team) return { error: "Only IT Support and Cost Control Group providers can manage FAQs." };
+      .in("slug", ["it-support", "cost-control", "software-csr"]).maybeSingle();
+    if (!team) return { error: "Only IT Support, Cost Control Group, and Software CSR providers can manage FAQs." };
     serviceTeamId = team.id;
   } else if (actor.user_side !== "admin") {
-    return { error: "Only administrators and IT Support or Cost Control Group providers can manage FAQs." };
+    return { error: "Only administrators and FAQ-enabled service team providers can manage FAQs." };
   }
 
   const id = value(formData, "faq_id");
@@ -1148,11 +1474,11 @@ export async function deleteFaq(formData: FormData) {
     if (!actor.service_team_id) return { error: "Your account is not assigned to an FAQ-enabled service team." };
     const { data: team } = await supabase.from("service_teams")
       .select("id").eq("id", actor.service_team_id).eq("is_active", true)
-      .in("slug", ["it-support", "cost-control"]).maybeSingle();
-    if (!team) return { error: "Only IT Support and Cost Control Group providers can manage FAQs." };
+      .in("slug", ["it-support", "cost-control", "software-csr"]).maybeSingle();
+    if (!team) return { error: "Only IT Support, Cost Control Group, and Software CSR providers can manage FAQs." };
     serviceTeamId = team.id;
   } else if (actor.user_side !== "admin") {
-    return { error: "Only administrators and IT Support or Cost Control Group providers can manage FAQs." };
+    return { error: "Only administrators and FAQ-enabled service team providers can manage FAQs." };
   }
 
   const id = value(formData, "faq_id");

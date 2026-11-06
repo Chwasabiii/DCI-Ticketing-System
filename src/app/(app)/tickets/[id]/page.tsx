@@ -18,7 +18,7 @@ import {
   getRelatedTickets,
   getProfileSummary,
 } from "@/lib/data";
-import { formatDate, formatDateTime } from "@/lib/utils";
+import { formatDate, formatDateTime, needsTicketPriorityReview } from "@/lib/utils";
 
 export default async function TicketDetailPage({
   params
@@ -65,9 +65,36 @@ export default async function TicketDetailPage({
 
   if (!ticket || !context.profile) notFound();
 
+  const canSubmitResolution =
+    context.profile.user_side === "admin" ||
+    (context.profile.user_side === "employee" &&
+      context.profile.service_team_id === ticket.service_team_id &&
+      (context.roleNames.includes("Personnel") || context.roleNames.includes("Coordinator")) &&
+      (!ticket.is_confidential || ticket.assigned_to === context.profile.id));
+  const ticketIsActive = !["resolved", "closed", "rejected"].includes(ticket.status);
+
   const showHandoff =
     (context.profile.user_side === "admin" || context.roleNames.includes("Coordinator")) &&
     !["resolved", "closed", "rejected"].includes(ticket.status);
+  const canViewTicketActions = context.profile.user_side === "admin"
+    || (context.profile.user_side === "employee"
+      && context.profile.service_team_id === ticket.service_team_id
+      && (context.roleNames.includes("Personnel") || context.roleNames.includes("Coordinator")))
+    || (context.profile.user_side === "employee"
+      && context.profile.service_team_id === ticket.service_team_id
+      && context.roleNames.includes("Personnel")
+      && !context.roleNames.includes("Coordinator")
+      && !["resolved", "closed", "rejected"].includes(ticket.status))
+    || (context.profile.user_side === "client"
+      && ticket.requester_id === context.profile.id
+      && ["resolved", "closed"].includes(ticket.status))
+    || (!ticket.is_confidential
+      && ["resolved", "closed"].includes(ticket.status)
+      && Boolean(ticket.resolution_notes?.trim())
+      && (context.profile.user_side === "admin"
+        || (context.profile.user_side === "employee"
+          && context.profile.service_team_id === ticket.service_team_id
+          && ["it-support", "cost-control", "software-csr"].includes(context.profile.service_team?.slug ?? ""))));
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5">
@@ -80,6 +107,7 @@ export default async function TicketDetailPage({
       </Link>
       <div className={`grid items-start gap-6 ${showHandoff ? "xl:grid-cols-[minmax(0,1fr)_360px]" : "grid-cols-1"}`}>
       <section className="space-y-5">
+        <div className={`grid items-start gap-5 ${canViewTicketActions ? "xl:grid-cols-[minmax(0,1fr)_320px]" : "grid-cols-1"}`}>
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(20,40,75,0.06)]">
           <div className="h-1.5 bg-gradient-to-r from-accent via-blue-400 to-indigo-300" />
           <div className="p-5 sm:p-7">
@@ -98,9 +126,10 @@ export default async function TicketDetailPage({
               <h1 className="mt-2 break-words text-2xl font-bold tracking-tight text-navy sm:text-3xl">{ticket.title}</h1>
             </div>
             <div className="flex flex-wrap gap-2">
-              {ticket.request_type && ticket.request_type !== "general" && (
-                <Badge value={ticket.request_type} />
+              {ticket.request_type && (
+                <Badge value={ticket.request_type === "general" ? "service_request" : ticket.request_type} />
               )}
+              {ticket.service_category && <Badge value={ticket.service_category} />}
               <Badge value={ticket.status} />
               <Badge value={ticket.priority} />
             </div>
@@ -109,6 +138,9 @@ export default async function TicketDetailPage({
             {[
               ["Created", formatDateTime(ticket.created_at)],
               ["Requested by", people.requester?.full_name ?? people.requester?.email ?? "Not available"],
+              ["Service team", ticket.service_team?.name ?? "Unassigned"],
+              ["Reported impact / urgency", ticket.reported_impact && ticket.reported_urgency ? `${ticket.reported_impact} impact · ${ticket.reported_urgency} urgency` : "Not recorded"],
+              ["Priority review", needsTicketPriorityReview(ticket) ? "Pending service team review" : ticket.priority_reviewed_at ? "Reviewed by service team" : "No elevated rating to review"],
               ["Due date", formatDate(ticket.due_date)],
               ["Assigned to", people.assignee?.full_name ?? people.assignee?.email ?? "Unassigned"]
             ].map(([label, value]) => (
@@ -118,6 +150,26 @@ export default async function TicketDetailPage({
               </div>
             ))}
           </dl>
+          {ticket.ccg_request_type && (
+            <section className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 sm:p-5">
+              <h2 className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-800">CCG request workflow</h2>
+              <p className="mt-2 text-sm font-semibold text-navy">
+                {ticket.ccg_request_type === "unit_rate" ? "Unit rate" : ticket.ccg_request_type === "vendor_list" ? "Vendor list" : "TOR / contracts"}
+                {ticket.ccg_request_scope ? ` · ${ticket.ccg_request_scope === "whole_boq" ? "Whole BOQ" : "Per material / system"}` : ""}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                {ticket.ccg_request_type === "unit_rate"
+                  ? ticket.ccg_request_scope === "whole_boq"
+                    ? "CCG reviews and submits a whole BOQ request within 24 hours. Per-material requests are checked against the database; if unavailable, vendor quotation may take 3–6 weeks."
+                    : "CCG checks the material against the database. Available rates are submitted within 24 hours; if unavailable, CCG requests a vendor quotation, which may take 3–6 weeks."
+                  : ticket.ccg_request_type === "vendor_list"
+                    ? "If the vendor list is in the database, CCG submits it within 24 hours. Otherwise CCG searches for vendors and contact details, targeting 3–5 working days."
+                    : "CCG checks whether a TOR / contracts sample is in the database. Available references are submitted within 24 hours; if none is available, the requester is notified."}
+              </p>
+              {context.profile.user_side !== "client" && <p className="mt-2 text-xs leading-5 text-emerald-900">Acknowledge and review the ticket first. Record the database check, vendor quotation or unavailable reference in the resolution summary before submitting the response. The requester confirms receipt by closing the resolved ticket.</p>}
+              <p className="mt-2 text-xs leading-5 text-slate-500">PMG requests with Procurement in scope are excluded. CCG cannot guarantee a vendor’s responsiveness or suitability for the work’s scope and complexity.</p>
+            </section>
+          )}
           <div className="mt-7 rounded-xl border border-slate-100 bg-slate-50/70 p-4 sm:p-5">
             <div className="flex items-center gap-2 text-slate-500">
               <FileText className="h-4 w-4 text-accent" />
@@ -127,7 +179,26 @@ export default async function TicketDetailPage({
               {ticket.description}
             </p>
           </div>
+          {ticket.resolution_notes && (
+            <div className="mt-4 rounded-xl border border-green-100 bg-green-50/60 p-4 sm:p-5">
+              <div className="flex items-center gap-2 text-green-800">
+                <FileText className="h-4 w-4" />
+                <h2 className="text-xs font-bold uppercase tracking-[0.12em]">
+                  {ticket.request_type === "incident_report" ? "Inspection and root cause findings" : "Resolution summary"}
+                </h2>
+              </div>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{ticket.resolution_notes}</p>
+            </div>
+          )}
         </div>
+        </div>
+        <TicketActions
+          key={`${ticket.id}-${ticket.updated_at ?? ""}`}
+          ticket={ticket}
+          profile={context.profile}
+          roles={context.roleNames}
+          people={routeOptions.people}
+        />
         </div>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_30px_rgba(20,40,75,0.06)] sm:p-6">
@@ -182,15 +253,8 @@ export default async function TicketDetailPage({
           initialActivity={activity}
           currentUserId={context.profile.id}
           allowInternalNotes={context.profile.user_side !== "client"}
-          actions={(
-            <TicketActions
-              key={`${ticket.id}-${ticket.updated_at ?? ""}`}
-              ticket={ticket}
-              profile={context.profile}
-              roles={context.roleNames}
-              people={routeOptions.people}
-            />
-          )}
+          canSubmitResolution={canSubmitResolution && ticketIsActive}
+          isIncidentReport={ticket.request_type === "incident_report"}
         />
         {context.profile.user_side === "client" && ticket.requester_id === context.profile.id && ["resolved", "closed"].includes(ticket.status) && (
           <TicketSatisfactionSurvey ticketId={String(ticket.id)} feedback={feedback} />

@@ -147,6 +147,11 @@ export function FaqManagement({ entries }: { entries: FaqEntry[] }) {
               className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
             >
               <input type="hidden" name="faq_id" value={entry.id} />
+              {entry.source_ticket_id && (
+                <p className="text-xs text-slate-500">
+                  Drafted from ticket #{entry.source_ticket_id}. <a href={`/tickets/${entry.source_ticket_id}`} className="font-semibold text-accent hover:underline">View source ticket</a>
+                </p>
+              )}
               <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
                 Question
                 <input

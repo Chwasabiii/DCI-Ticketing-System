@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowRight,
   ArrowUpRight,
+  BarChart3,
   BadgeHelp,
   CheckCircle2,
   Clock3,
@@ -66,6 +67,7 @@ export default async function DashboardPage() {
   const visibleTickets = profile?.user_side === "employee"
     ? tickets.filter((ticket) => ticket.service_team_id === profile.service_team_id)
     : tickets;
+  const isEndUser = profile?.user_side === "client";
 
   const active = visibleTickets.filter(
     (ticket) => !["resolved", "closed", "rejected"].includes(ticket.status)
@@ -99,13 +101,24 @@ export default async function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Link
-              href="/tickets/new"
-              className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-navy shadow-sm transition-colors hover:bg-blue-50"
-            >
-              <Plus className="h-4 w-4" />
-              Open a ticket
-            </Link>
+            {profile?.user_side === "employee" && (
+              <Link
+                href="/performance"
+                className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition-colors hover:bg-white/15"
+              >
+                <BarChart3 className="h-4 w-4" />
+                KPI score
+              </Link>
+            )}
+            {isEndUser && (
+              <Link
+                href="/tickets/new"
+                className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-navy shadow-sm transition-colors hover:bg-blue-50"
+              >
+                <Plus className="h-4 w-4" />
+                Open a ticket
+              </Link>
+            )}
             <Link
               href="/tickets"
               className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 text-sm font-semibold text-white transition-colors hover:bg-white/10"
@@ -168,7 +181,7 @@ export default async function DashboardPage() {
         canExport={profile?.user_side === "admin" && profile.status === "active"}
       />
 
-      <section className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <section className={`grid items-start gap-6 ${isEndUser || urgent > 0 ? "xl:grid-cols-[minmax(0,1fr)_300px]" : "xl:grid-cols-1"}`}>
         <div className="min-w-0">
           <div className="mb-4 flex items-end justify-between gap-3">
             <div>
@@ -183,6 +196,8 @@ export default async function DashboardPage() {
         </div>
 
         <aside className="space-y-4">
+          {isEndUser && (
+            <>
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
             <div className="flex items-center gap-3">
               <span className="grid h-10 w-10 place-items-center rounded-xl bg-violet-50 text-violet-700">
@@ -221,6 +236,8 @@ export default async function DashboardPage() {
               </span>
             </span>
           </Link>
+            </>
+          )}
 
           {urgent > 0 && (
             <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4">
