@@ -100,6 +100,7 @@ export type Ticket = {
   request_type?: RequestType;
   service_category?: ServiceCategory;
   ccg_request_type?: CcgRequestType | null;
+  ccg_request_types?: CcgRequestType[];
   ccg_request_scope?: CcgRequestScope | null;
   ccg_procurement_in_scope?: boolean | null;
   ccg_database_result?: CcgDatabaseResult | null;

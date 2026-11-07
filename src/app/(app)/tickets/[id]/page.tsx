@@ -76,8 +76,29 @@ export default async function TicketDetailPage({
     getTicketFeedback(id),
     getTicketSlaPolicies()
   ]);
-
+  const resolvedEvent = [...activity].reverse().find((item) =>
+    item.kind === "event" && item.event_type === "status_changed" && item.to_status === "resolved"
+  );
+  const resolvedBy = resolvedEvent?.kind === "event"
+    ? resolvedEvent.actor?.full_name?.trim() || resolvedEvent.actor?.email || "Support team member"
+    : null;
   if (!ticket || !context.profile) notFound();
+
+  const ccgRequestTypes = ticket.ccg_request_types?.length
+    ? ticket.ccg_request_types
+    : ticket.ccg_request_type ? [ticket.ccg_request_type] : [];
+  const ccgRequestLabels = ccgRequestTypes.map((type) => ({
+    unit_rate: "Unit rate",
+    vendor_list: "Vendor list",
+    tor_contracts: "TOR / contracts"
+  }[type]));
+  const ccgFollowupLabel = ccgRequestTypes.includes("unit_rate")
+    && ticket.ccg_request_scope === "per_material"
+    && ccgRequestTypes.includes("vendor_list")
+    ? "Vendor quote and search"
+    : ccgRequestTypes.includes("unit_rate") && ticket.ccg_request_scope === "per_material"
+      ? "Vendor quote"
+      : ccgRequestTypes.includes("vendor_list") ? "Vendor search" : "Vendor follow-up";
 
   const canSubmitResolution =
     context.profile.user_side === "admin" ||
@@ -173,7 +194,7 @@ export default async function TicketDetailPage({
               ["Reported impact / urgency", ticket.reported_impact && ticket.reported_urgency ? `${ticket.reported_impact} impact · ${ticket.reported_urgency} urgency` : "Not recorded"],
               ["Priority review", needsTicketPriorityReview(ticket) ? "Pending service team review" : ticket.priority_reviewed_at ? "Reviewed by service team" : "No elevated rating to review"],
               ["Due date", formatDate(ticket.due_date)],
-              ["Assigned to", people.assignee?.full_name ?? people.assignee?.email ?? "Unassigned"]
+              ["Assigned handler", people.assignee?.full_name?.trim() || people.assignee?.email || "Service team (not yet assigned)"]
             ].map(([label, value]) => (
               <div key={label} className="min-h-[76px] rounded-xl border border-slate-100 bg-gradient-to-br from-white to-slate-50/80 px-3.5 py-3 shadow-sm">
                 <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</dt>
@@ -185,11 +206,13 @@ export default async function TicketDetailPage({
             <section className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 sm:p-5">
               <h2 className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-800">CCG request workflow</h2>
               <p className="mt-2 text-sm font-semibold text-navy">
-                {ticket.ccg_request_type === "unit_rate" ? "Unit rate" : ticket.ccg_request_type === "vendor_list" ? "Vendor list" : "TOR / contracts"}
+                {ccgRequestLabels.join(" + ")}
                 {ticket.ccg_request_scope ? ` · ${ticket.ccg_request_scope === "whole_boq" ? "Whole BOQ" : "Per material / system"}` : ""}
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                {ticket.ccg_request_type === "unit_rate"
+                {ccgRequestTypes.length > 1
+                  ? "CCG will use one shared database result and complete any required vendor follow-up for the selected services."
+                  : ticket.ccg_request_type === "unit_rate"
                   ? ticket.ccg_request_scope === "whole_boq"
                     ? "CCG reviews and submits a whole BOQ request within 24 hours. Per-material requests are checked against the database; if unavailable, vendor quotation may take 3–6 weeks."
                     : "CCG checks the material against the database. Available rates are submitted within 24 hours; if unavailable, CCG requests a vendor quotation, which may take 3–6 weeks."
@@ -198,7 +221,7 @@ export default async function TicketDetailPage({
                     : "CCG checks whether a TOR / contracts sample is in the database. Available references are submitted within 24 hours; if none is available, the requester is notified."}
               </p>
               {ticket.ccg_database_result && <p className="mt-2 text-xs font-semibold text-emerald-900">Database result: {ticket.ccg_database_result === "not_required" ? "not required for a whole BOQ" : ticket.ccg_database_result}</p>}
-              {ticket.ccg_followup_type && <p className="mt-1 text-xs font-semibold text-emerald-900">{ticket.ccg_followup_type === "vendor_quote" ? "Vendor quote" : "Vendor search"}: {(ticket.ccg_followup_status ?? "pending").replaceAll("_", " ")}</p>}
+              {ticket.ccg_followup_type && <p className="mt-1 text-xs font-semibold text-emerald-900">{ccgFollowupLabel}: {(ticket.ccg_followup_status ?? "pending").replaceAll("_", " ")}</p>}
               <div className="mt-3 grid gap-2 rounded-lg border border-emerald-100 bg-white/80 p-3 text-xs sm:grid-cols-2">
                 <p><span className="font-bold text-slate-700">CCG-controlled deadline: </span>{ticket.status === "waiting_for_info" ? "Paused while awaiting requester" : formatDateTime(ticket.ccg_stage_due_at)}</p>
                 {ticket.ccg_vendor_expected_at && <p><span className="font-bold text-slate-700">Vendor expected by: </span>{formatDateTime(ticket.ccg_vendor_expected_at)}</p>}
@@ -257,6 +280,7 @@ export default async function TicketDetailPage({
             profile={context.profile}
             roles={context.roleNames}
             people={routeOptions.people}
+            resolvedBy={resolvedBy}
           />}
         </aside>}
         </div>

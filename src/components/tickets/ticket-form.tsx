@@ -50,6 +50,7 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
   const [requestType, setRequestType] = useState<RequestType>("service_request");
   const [serviceCategory, setServiceCategory] = useState<ServiceCategory>("hardware");
   const [ccgRequestType, setCcgRequestType] = useState("unit_rate");
+  const [ccgRequestTypes, setCcgRequestTypes] = useState<string[]>(["unit_rate"]);
   const [ccgRequestScope, setCcgRequestScope] = useState("whole_boq");
   const isCcg = teamSlug === "cost-control";
   const [message, setMessage] = useState<string | null>(null);
@@ -71,7 +72,9 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
       setDescriptionText(draft.description);
       setRequestType(draft.requestType as RequestType);
       setServiceCategory(draft.serviceCategory as ServiceCategory);
-      setCcgRequestType(draft.ccgRequestType ?? "unit_rate");
+      const savedCcgTypes = draft.ccgRequestTypes?.length ? draft.ccgRequestTypes : [draft.ccgRequestType ?? "unit_rate"];
+      setCcgRequestTypes(savedCcgTypes);
+      setCcgRequestType(savedCcgTypes[0]);
       setCcgRequestScope(draft.ccgRequestScope ?? "whole_boq");
       setImpact(draft.impact as TicketImpact);
       setUrgency(draft.urgency as TicketUrgency);
@@ -84,17 +87,17 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
     const timer = window.setTimeout(() => {
       saveTicketDraft({
       id: draftId, title: titleText, description: descriptionText, requestType,
-      serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestScope, updatedAt: new Date().toISOString()
+      serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestTypes, ccgRequestScope, updatedAt: new Date().toISOString()
       });
       setDraftSavedAt(new Date().toISOString());
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [draftReady, draftId, titleText, descriptionText, requestType, serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestScope, createdTicketId]);
+  }, [draftReady, draftId, titleText, descriptionText, requestType, serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestTypes, ccgRequestScope, createdTicketId]);
 
   function saveDraftNow() {
     if (!draftReady || !draftId) return;
     const updatedAt = new Date().toISOString();
-    saveTicketDraft({ id: draftId, title: titleText, description: descriptionText, requestType, serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestScope, updatedAt });
+    saveTicketDraft({ id: draftId, title: titleText, description: descriptionText, requestType, serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestTypes, ccgRequestScope, updatedAt });
     setDraftSavedAt(updatedAt);
   }
 
@@ -226,6 +229,7 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
     <form onSubmit={handleSubmit} className="grid min-w-0 gap-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-7">
       <input type="hidden" name="service_team_slug" value={teamSlug} />
       {isCcg && <input type="hidden" name="service_category" value="other_services" />}
+      {isCcg && <input type="hidden" name="ccg_request_type" value={ccgRequestTypes[0] ?? ""} />}
       <div className="grid min-w-0 gap-4 sm:grid-cols-2">
         <label className="grid min-w-0 gap-2">
           <span className="text-sm font-semibold text-slate-700">Ticket title <span className="text-urgent">*</span></span>
@@ -233,14 +237,35 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
         </label>
         {isCcg ? <>
           <input type="hidden" name="request_type" value="service_request" />
-          <label className="grid min-w-0 gap-2">
-            <span className="text-sm font-semibold text-slate-700">CCG request type</span>
-            <select name="ccg_request_type" value={ccgRequestType} onChange={(event) => setCcgRequestType(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-ring">
-              <option value="unit_rate">Unit rate</option>
-              <option value="vendor_list">Vendor list</option>
-              <option value="tor_contracts">TOR / contracts</option>
-            </select>
-          </label>
+          <fieldset className="grid min-w-0 gap-2 sm:col-span-2">
+            <legend className="text-sm font-semibold text-slate-700">What does this CCG request include? Select all that apply.</legend>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {[
+                ["unit_rate", "Unit rate"],
+                ["vendor_list", "Vendor list"],
+                ["tor_contracts", "TOR / contracts"]
+              ].map(([value, label]) => (
+                <label key={value} className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    name="ccg_request_types"
+                    value={value}
+                    checked={ccgRequestTypes.includes(value)}
+                    onChange={(event) => {
+                      const next = event.target.checked
+                        ? [...ccgRequestTypes, value]
+                        : ccgRequestTypes.filter((type) => type !== value);
+                      setCcgRequestTypes(next);
+                      setCcgRequestType(next[0] ?? "");
+                    }}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-blue-700"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs leading-5 text-slate-500">Select multiple services to include them together in one CCG ticket. CCG records one shared database result and completes any required vendor follow-up for the selected services.</p>
+          </fieldset>
           <label className="grid min-w-0 gap-2">
             <span className="text-sm font-semibold text-slate-700">Does this request include Procurement?</span>
             <select name="ccg_procurement_in_scope" required className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-ring" defaultValue="false">
@@ -248,13 +273,21 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
               <option value="true">Yes</option>
             </select>
           </label>
-          {ccgRequestType === "unit_rate" && <label className="grid min-w-0 gap-2">
-            <span className="text-sm font-semibold text-slate-700">Unit rate scope</span>
-            <select name="ccg_request_scope" required value={ccgRequestScope} onChange={(event) => setCcgRequestScope(event.target.value)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-ring">
-              <option value="whole_boq">Whole BOQ</option>
-              <option value="per_material">Per material / system</option>
-            </select>
-          </label>}
+          {ccgRequestTypes.includes("unit_rate") && <div className="grid min-w-0 gap-2 rounded-xl border border-blue-100 bg-blue-50/60 p-4 sm:col-span-2">
+            <input type="hidden" name="ccg_request_scope" value={ccgRequestScope} />
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={ccgRequestScope === "whole_boq"}
+                onChange={(event) => setCcgRequestScope(event.target.checked ? "whole_boq" : "per_material")}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-blue-700"
+              />
+              <span>
+                <span className="block text-sm font-semibold text-slate-800">This is a bulk request for a whole BOQ</span>
+                <span className="mt-1 block text-xs leading-5 text-slate-600">Check this to include many BOQ items in one ticket. Describe the project and attach the BOQ or item list. Leave it unchecked for a request about one material or system.</span>
+              </span>
+            </label>
+          </div>}
         </> : <>
         <label className="grid min-w-0 gap-2">
           <span className="text-sm font-semibold text-slate-700">Request type</span>
@@ -329,7 +362,9 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
           rows={5}
           className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm focus-ring"
           placeholder={isCcg
-            ? ccgRequestType === "unit_rate"
+            ? ccgRequestTypes.length > 1
+              ? "List the project and details for each selected CCG service. Include quantities, materials, vendor criteria, and document references as applicable."
+              : ccgRequestType === "unit_rate"
               ? "Include the project, BOQ or material/system, quantities, location, and required date."
               : ccgRequestType === "vendor_list"
                 ? "Describe the materials or system, project location, and any vendor criteria or required date."

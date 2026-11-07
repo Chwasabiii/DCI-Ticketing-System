@@ -563,8 +563,21 @@ export async function createTicket(formData: FormData) {
   const title = value(formData, "title");
   const description = value(formData, "description");
   const teamSlug = value(formData, "service_team_slug") ?? "it-support";
-  const ccgRequestType = value(formData, "ccg_request_type");
+  const allowedCcgRequestTypes = ["unit_rate", "vendor_list", "tor_contracts"] as const;
+  const submittedCcgTypes = formData.getAll("ccg_request_types").filter((entry): entry is string => typeof entry === "string");
+  const requestedCcgPrimary = value(formData, "ccg_request_type");
+  const ccgRequestTypes = allowedCcgRequestTypes.filter((type) => submittedCcgTypes.includes(type));
   const ccgRequestScope = value(formData, "ccg_request_scope");
+  if (ccgRequestTypes.length === 0 && requestedCcgPrimary && allowedCcgRequestTypes.includes(requestedCcgPrimary as typeof allowedCcgRequestTypes[number])) {
+    ccgRequestTypes.push(requestedCcgPrimary as typeof allowedCcgRequestTypes[number]);
+  }
+  const ccgRequestType = ccgRequestTypes.includes("unit_rate") && ccgRequestScope === "per_material"
+    ? "unit_rate"
+    : ccgRequestTypes.includes("vendor_list")
+      ? "vendor_list"
+      : ccgRequestTypes.includes("tor_contracts")
+        ? "tor_contracts"
+        : ccgRequestTypes.includes("unit_rate") ? "unit_rate" : null;
   const ccgProcurementInScope = value(formData, "ccg_procurement_in_scope");
   const requestedType = value(formData, "request_type") ?? "service_request";
   const requestTypes = ["service_request", "access_request", "incident_report"] as const;
@@ -601,9 +614,12 @@ export async function createTicket(formData: FormData) {
   if (serviceTeam.slug === "cost-control" && ccgProcurementInScope !== "false") {
     return { error: "CCG cannot accept requests that include Procurement in their scope. Please contact the Procurement team." };
   }
-  if (serviceTeam.slug === "cost-control" && (!(["unit_rate", "vendor_list", "tor_contracts"].includes(ccgRequestType ?? "")) || (ccgRequestType === "unit_rate" && !["whole_boq", "per_material"].includes(ccgRequestScope ?? "")))) {
-    return { error: "Choose a CCG request type and, for unit rates, whether you need a whole BOQ or per material." };
-  }
+  if (serviceTeam.slug === "cost-control" && (
+    ccgRequestTypes.length === 0
+    || !ccgRequestTypes.includes(ccgRequestType as typeof allowedCcgRequestTypes[number])
+    || (ccgRequestTypes.includes("unit_rate") && !["whole_boq", "per_material"].includes(ccgRequestScope ?? ""))
+    || (!ccgRequestTypes.includes("unit_rate") && ccgRequestScope !== null)
+  )) return { error: "Select one or more CCG request types and choose the unit-rate scope if applicable." };
 
   const { data: ticket, error } = await supabase
     .from("tickets")
@@ -615,6 +631,7 @@ export async function createTicket(formData: FormData) {
       request_type: requestType,
       service_category: serviceCategory,
       ccg_request_type: serviceTeam.slug === "cost-control" ? ccgRequestType : null,
+      ccg_request_types: serviceTeam.slug === "cost-control" ? ccgRequestTypes : [],
       ccg_request_scope: serviceTeam.slug === "cost-control" && ccgRequestType === "unit_rate" ? ccgRequestScope : null,
       ccg_procurement_in_scope: serviceTeam.slug === "cost-control" ? false : null,
       impact: effectiveImpact,
@@ -871,7 +888,7 @@ export async function updateTicketStatus(formData: FormData) {
 
   const { data: ticketForResolution, error: ticketForResolutionError } = await supabase
     .from("tickets")
-    .select("request_type, service_team_id, is_confidential, assigned_to, status, ccg_request_type, ccg_request_scope, ccg_database_result, ccg_followup_type, ccg_followup_status")
+    .select("request_type, service_team_id, is_confidential, assigned_to, status, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_database_result, ccg_followup_type, ccg_followup_status")
     .eq("id", ticketId)
     .maybeSingle();
   if (ticketForResolutionError) return { error: ticketForResolutionError.message };
@@ -887,11 +904,15 @@ export async function updateTicketStatus(formData: FormData) {
     return { error: "You can only update tickets assigned to your service team. Confidential tickets require you to be the assignee." };
   }
   const resolutionNotes = value(formData, "resolution_notes");
+  const ccgRequestTypes = ticketForResolution.ccg_request_types?.length
+    ? ticketForResolution.ccg_request_types
+    : ticketForResolution.ccg_request_type ? [ticketForResolution.ccg_request_type] : [];
+  const needsCcgDatabaseCheck = !(ccgRequestTypes.length === 1 && ccgRequestTypes.includes("unit_rate") && ticketForResolution.ccg_request_scope === "whole_boq");
   let ccgDatabaseResult = ticketForResolution.ccg_database_result;
   let ccgFollowupType = ticketForResolution.ccg_followup_type;
   let ccgFollowupStatus = ticketForResolution.ccg_followup_status;
   if (ticketForResolution.ccg_request_type && ticketForResolution.status === "under_review" && ["in_progress", "resolved"].includes(status)) {
-    if (ticketForResolution.ccg_request_type === "unit_rate" && ticketForResolution.ccg_request_scope === "whole_boq") {
+    if (!needsCcgDatabaseCheck) {
       ccgDatabaseResult = "not_required";
     } else {
       const selectedResult = value(formData, "ccg_database_result");
@@ -900,8 +921,10 @@ export async function updateTicketStatus(formData: FormData) {
       }
       ccgDatabaseResult = selectedResult;
     }
-    const needsVendorQuote = ccgDatabaseResult === "unavailable" && ticketForResolution.ccg_request_type === "unit_rate";
-    const needsVendorSearch = ccgDatabaseResult === "unavailable" && ticketForResolution.ccg_request_type === "vendor_list";
+    const needsVendorQuote = ccgDatabaseResult === "unavailable"
+      && ccgRequestTypes.includes("unit_rate")
+      && ticketForResolution.ccg_request_scope === "per_material";
+    const needsVendorSearch = ccgDatabaseResult === "unavailable" && ccgRequestTypes.includes("vendor_list");
     if (needsVendorQuote || needsVendorSearch) {
       if (status === "resolved") return { error: "Start the vendor quote or search before submitting the final response." };
       const expectedType = needsVendorQuote ? "vendor_quote" : "vendor_search";

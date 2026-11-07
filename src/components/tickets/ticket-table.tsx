@@ -125,7 +125,7 @@ export function TicketTable({
                     {ticket.title}
                   </span>
                   <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-                    <span>{ticket.ccg_request_type ? ({ unit_rate: "Unit rate", vendor_list: "Vendor list", tor_contracts: "TOR / contracts" }[ticket.ccg_request_type] ?? "CCG request") : requestTypeLabel(ticket.request_type)}</span>
+                    <span>{ticket.ccg_request_type ? (ticket.ccg_request_types?.length ? ticket.ccg_request_types : [ticket.ccg_request_type]).map((type) => ({ unit_rate: "Unit rate", vendor_list: "Vendor list", tor_contracts: "TOR / contracts" }[type] ?? "CCG request")).join(" + ") : requestTypeLabel(ticket.request_type)}</span>
                     <span aria-hidden="true">·</span>
                     <span className="capitalize">{ticket.ccg_request_scope ? ticket.ccg_request_scope.replaceAll("_", " ") : serviceCategoryLabel(ticket.service_category)}</span>
                     <span aria-hidden="true">·</span>

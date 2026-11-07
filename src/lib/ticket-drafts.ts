@@ -8,6 +8,7 @@ export type TicketDraft = {
   urgency: string;
   teamSlug: string;
   ccgRequestType?: string;
+  ccgRequestTypes?: string[];
   ccgRequestScope?: string;
   updatedAt: string;
 };
