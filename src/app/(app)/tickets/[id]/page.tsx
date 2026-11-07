@@ -273,8 +273,19 @@ export default async function TicketDetailPage({
               slaPolicies={slaPolicies}
               variant="panel"
             />
+            {canViewTicketActions && <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
+              <TicketActions
+                key={`${ticket.id}-${ticket.updated_at ?? ""}`}
+                ticket={ticket}
+                profile={context.profile}
+                roles={context.roleNames}
+                people={routeOptions.people}
+                resolvedBy={resolvedBy}
+                compact
+              />
+            </div>}
           </div>}
-          {canViewTicketActions && <TicketActions
+          {canViewTicketActions && !canUseQuickActions && <TicketActions
             key={`${ticket.id}-${ticket.updated_at ?? ""}`}
             ticket={ticket}
             profile={context.profile}

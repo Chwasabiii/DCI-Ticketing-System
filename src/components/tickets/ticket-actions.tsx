@@ -27,13 +27,15 @@ export function TicketActions({
   profile,
   roles,
   people,
-  resolvedBy
+  resolvedBy,
+  compact = false
 }: {
   ticket: Ticket;
   profile: Profile;
   roles: EmployeeRole[];
   people: Profile[];
   resolvedBy: string | null;
+  compact?: boolean;
 }) {
   const router = useRouter();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -276,15 +278,15 @@ export function TicketActions({
   }
 
   return (
-    <aside className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_100px_rgba(20,40,75,0.06)]">
-      <div className="h-1.5 bg-gradient-to-r from-accent via-blue-400 to-indigo-300" />
+    <div className={compact ? "" : "overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_100px_rgba(20,40,75,0.06)]"}>
+      {!compact && <div className="h-1.5 bg-gradient-to-r from-accent via-blue-400 to-indigo-300" />}
       {confirmDialog}
-      <div className="p-5 sm:p-7">
-        <div className="mb-3 flex items-center justify-between gap-3">
+      <div className={compact ? "" : "p-5 sm:p-7"}>
+        {!compact && <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-navy">Handle this request</h2>
           <Badge value={ticket.status} />
-        </div>
-        {["resolved", "closed"].includes(ticket.status) && ticket.resolution_notes?.trim() && (
+        </div>}
+        {!compact && ["resolved", "closed"].includes(ticket.status) && ticket.resolution_notes?.trim() && (
           <div className="mb-4 rounded-xl border border-green-100 bg-green-50/60 p-4">
             <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-green-800">
               {ticket.request_type === "incident_report" ? "Inspection and root cause findings" : "Resolution summary"}
@@ -294,7 +296,7 @@ export function TicketActions({
             <a href="#ticket-activity" className="mt-3 inline-block text-xs font-semibold text-accent hover:underline">View full handling history</a>
           </div>
         )}
-        {profile.user_side === "employee" && profile.service_team?.slug === "cost-control" && ticket.ccg_request_type && (
+        {!compact && profile.user_side === "employee" && profile.service_team?.slug === "cost-control" && ticket.ccg_request_type && (
           <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3 text-xs leading-5 text-emerald-950">
             <p className="font-bold">CCG stage: {ticket.status === "open" ? "Acknowledge request" : ticket.status === "assigned" ? "Assigned for review" : ticket.status === "under_review" ? "Check the relevant database" : ticket.status === "in_progress" ? ticket.ccg_followup_status === "pending" ? `${ccgFollowupLabel} underway` : "Prepare the response" : ticket.status === "resolved" ? "Awaiting requester receipt" : ticket.status.replaceAll("_", " ")}</p>
             <ol className="mt-1 list-inside list-decimal space-y-1">
@@ -313,7 +315,7 @@ export function TicketActions({
           </div>
         )}
         <div className="grid gap-2">
-          {canCreateFaqDraft && (
+          {!compact && canCreateFaqDraft && (
             <div className="grid gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
               <div>
                 <h3 className="text-sm font-bold text-navy">Share this solution with the team</h3>
@@ -411,7 +413,7 @@ export function TicketActions({
               </Button>
             </form>
           )}
-          {(canRoute || canResolve) && activeTicket && (
+          {(canRoute || canResolve) && activeTicket && !compact && (
             <form onSubmit={handleStatusUpdate} className="grid gap-3">
               <input type="hidden" name="ticket_id" value={ticket.id} />
               <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
@@ -550,6 +552,6 @@ export function TicketActions({
           )}
         </div>
       </div>
-    </aside>
+    </div>
   );
 }

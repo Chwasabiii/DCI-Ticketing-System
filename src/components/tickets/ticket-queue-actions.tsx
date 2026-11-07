@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { Check, CircleCheck, LoaderCircle, Send, UserPlus } from "lucide-react";
-import { claimTeamTicket, routeTicket, updateTicketStatus } from "@/lib/actions";
+import { claimTeamTicket, updateTicketStatus } from "@/lib/actions";
 import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import type { Profile, Ticket, TicketSlaPolicy, TicketStatus } from "@/lib/types";
 import { getTicketSlaIndicators } from "@/lib/utils";
@@ -19,7 +19,6 @@ const quickStatuses = [
 
 export function TicketQueueActions({
   ticket,
-  employees,
   canAssign,
   canChangeStatus,
   canClaim,
@@ -40,7 +39,6 @@ export function TicketQueueActions({
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [status, setStatus] = useState<TicketStatus>(ticket.status as TicketStatus);
   const [resolutionNotes, setResolutionNotes] = useState(ticket.resolution_notes ?? "");
-  const [assignee, setAssignee] = useState(ticket.assigned_to ?? "");
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
   const activeTicket = !["resolved", "closed", "rejected"].includes(ticket.status);
@@ -93,27 +91,9 @@ export function TicketQueueActions({
     });
   }
 
-  function submitAssignment() {
-    if (!activeTicket) {
-      setMessage("This ticket is complete. The requester must reopen it before it can be routed.");
-      return;
-    }
-    const form = new FormData();
-    form.set("ticket_id", String(ticket.id));
-    form.set("priority", String(ticket.priority));
-    form.set("assigned_to", assignee);
-    form.set("due_date", ticket.due_date ?? "");
-    form.set("status", String(ticket.status));
-    startTransition(async () => {
-      const result = await routeTicket(form);
-      setMessage("error" in result ? result.error ?? "Could not assign ticket." : result.success ?? "Assignment saved.");
-      if (!("error" in result)) router.refresh();
-    });
-  }
-
   const canAssignActive = canAssign && activeTicket;
   const canChangeStatusActive = canChangeStatus && activeTicket;
-  if (!canAssignActive && !canChangeStatusActive && !canClaimTicket) return null;
+  if (variant === "row" ? !canClaimTicket : !canAssignActive && !canChangeStatusActive && !canClaimTicket) return null;
 
   const statusLabel = quickStatuses.find(([value]) => value === ticket.status)?.[1] ?? ticket.status;
   const statusControl = canChangeStatusActive && (
@@ -181,20 +161,6 @@ export function TicketQueueActions({
     <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:pl-[4.75rem]">
       {confirmDialog}
       {canClaimTicket && <button type="button" onClick={() => void submitClaim()} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60">{pending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}{ticket.assigned_to ? "Take over ticket" : "Claim ticket"}</button>}
-      {canAssignActive && variant === "row" && (
-        <label className="grid min-w-48 flex-1 gap-1.5 text-xs font-semibold text-slate-600">
-          Assign to
-          <select value={assignee} onChange={(event) => setAssignee(event.target.value)} disabled={pending} className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-ring">
-            <option value="">Unassigned</option>
-            {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name || employee.email || "Employee"}</option>)}
-          </select>
-        </label>
-      )}
-      {statusControl}
-      {resolutionControl}
-      {canAssignActive && variant === "row" && <button type="button" onClick={submitAssignment} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-navy px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">Assign ticket</button>}
-      {canChangeStatusActive && <button type="button" onClick={() => void submitStatus()} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">Update status</button>}
-      {canChangeStatus && activeTicket && <button type="button" onClick={() => void submitStatus("resolved")} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">Submit resolution</button>}
       {message && <span role="status" className="w-full text-xs text-slate-600">{message}</span>}
     </div>
   );
