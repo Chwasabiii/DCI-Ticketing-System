@@ -73,6 +73,10 @@ export function TicketQueueActions({
   }
 
   async function submitStatus(requestedStatus: TicketStatus = status) {
+    if (!activeTicket) {
+      setMessage("This ticket is complete. The requester must reopen it before its status can change.");
+      return;
+    }
     if (requestedStatus === "resolved" && ticket.request_type === "incident_report" && !resolutionNotes.trim()) {
       setMessage("Add the inspection, root cause, and corrective action before resolving this incident.");
       return;
@@ -90,6 +94,10 @@ export function TicketQueueActions({
   }
 
   function submitAssignment() {
+    if (!activeTicket) {
+      setMessage("This ticket is complete. The requester must reopen it before it can be routed.");
+      return;
+    }
     const form = new FormData();
     form.set("ticket_id", String(ticket.id));
     form.set("priority", String(ticket.priority));
@@ -103,10 +111,12 @@ export function TicketQueueActions({
     });
   }
 
-  if (!canAssign && !canChangeStatus && !canClaimTicket) return null;
+  const canAssignActive = canAssign && activeTicket;
+  const canChangeStatusActive = canChangeStatus && activeTicket;
+  if (!canAssignActive && !canChangeStatusActive && !canClaimTicket) return null;
 
   const statusLabel = quickStatuses.find(([value]) => value === ticket.status)?.[1] ?? ticket.status;
-  const statusControl = canChangeStatus && (
+  const statusControl = canChangeStatusActive && (
     <label className={`grid gap-1.5 text-xs font-semibold text-slate-600 ${variant === "panel" ? "w-full" : "min-w-40 flex-1"}`}>
       Status
       <select value={status} onChange={(event) => setStatus(event.target.value as TicketStatus)} disabled={pending} className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-ring">
@@ -158,7 +168,7 @@ export function TicketQueueActions({
           {statusControl}
           {resolutionControl}
         </div>
-        {canChangeStatus && <div className="mt-5 space-y-2.5 border-t border-slate-100 pt-4">
+        {canChangeStatusActive && <div className="mt-5 space-y-2.5 border-t border-slate-100 pt-4">
           <button type="button" onClick={() => void submitStatus()} disabled={pending} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60">{pending && <LoaderCircle className="h-4 w-4 animate-spin" />}Save status update</button>
           {activeTicket && <button type="button" onClick={() => void submitStatus("resolved")} disabled={pending} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-[0_5px_14px_rgba(37,99,235,0.22)] transition hover:bg-blue-700 disabled:opacity-60">{pending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Submit resolution</button>}
         </div>}
@@ -171,7 +181,7 @@ export function TicketQueueActions({
     <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:pl-[4.75rem]">
       {confirmDialog}
       {canClaimTicket && <button type="button" onClick={() => void submitClaim()} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-60">{pending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}{ticket.assigned_to ? "Take over ticket" : "Claim ticket"}</button>}
-      {canAssign && variant === "row" && (
+      {canAssignActive && variant === "row" && (
         <label className="grid min-w-48 flex-1 gap-1.5 text-xs font-semibold text-slate-600">
           Assign to
           <select value={assignee} onChange={(event) => setAssignee(event.target.value)} disabled={pending} className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm focus-ring">
@@ -182,8 +192,8 @@ export function TicketQueueActions({
       )}
       {statusControl}
       {resolutionControl}
-      {canAssign && variant === "row" && <button type="button" onClick={submitAssignment} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-navy px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">Assign ticket</button>}
-      {canChangeStatus && <button type="button" onClick={() => void submitStatus()} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">Update status</button>}
+      {canAssignActive && variant === "row" && <button type="button" onClick={submitAssignment} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-navy px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60">Assign ticket</button>}
+      {canChangeStatusActive && <button type="button" onClick={() => void submitStatus()} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">Update status</button>}
       {canChangeStatus && activeTicket && <button type="button" onClick={() => void submitStatus("resolved")} disabled={pending} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60">Submit resolution</button>}
       {message && <span role="status" className="w-full text-xs text-slate-600">{message}</span>}
     </div>

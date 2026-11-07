@@ -84,6 +84,7 @@ export function TicketActions({
     && ticket.status === "in_progress";
   const isClient = profile.user_side === "client";
   const isRequester = ticket.requester_id === profile.id;
+  const activeTicket = !["resolved", "closed", "rejected"].includes(ticket.status);
   const editableStatuses = canResolve
     ? ticketStatuses
     : ticketStatuses.filter((status) => !["resolved", "closed", "rejected"].includes(status));
@@ -328,7 +329,7 @@ export function TicketActions({
               <Button type="submit" variant="secondary" loading={reviewingPriority}><Save className="h-4 w-4" />Save priority review</Button>
             </form>
           )}
-          {canRoute && (!isCcgWorkflow || !["resolved", "closed", "rejected"].includes(ticket.status)) && (
+          {canRoute && activeTicket && (
             <form onSubmit={handleRoute} className="grid gap-3 border-b border-slate-100 pb-4">
               <p className="text-xs leading-5 text-slate-600">
                 Review the request, set its priority, and assign an active employee.
@@ -384,7 +385,7 @@ export function TicketActions({
               </Button>
             </form>
           )}
-          {(canRoute || canResolve) && (!isCcgWorkflow || !["resolved", "closed", "rejected"].includes(ticket.status)) && (
+          {(canRoute || canResolve) && activeTicket && (
             <form onSubmit={handleStatusUpdate} className="grid gap-3">
               <input type="hidden" name="ticket_id" value={ticket.id} />
               <label className="grid gap-1.5 text-xs font-semibold text-slate-700">

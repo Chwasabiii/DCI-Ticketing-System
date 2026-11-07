@@ -876,6 +876,9 @@ export async function updateTicketStatus(formData: FormData) {
     .maybeSingle();
   if (ticketForResolutionError) return { error: ticketForResolutionError.message };
   if (!ticketForResolution) return { error: "You do not have permission to update this ticket." };
+  if (["resolved", "closed"].includes(ticketForResolution.status) && status !== ticketForResolution.status) {
+    return { error: "This ticket is complete. The requester must reopen it before its status can change." };
+  }
   if (
     actor.profile.user_side === "employee" &&
     (ticketForResolution.service_team_id !== actor.profile.service_team_id ||
@@ -1114,9 +1117,12 @@ export async function routeTicket(formData: FormData) {
   }
 
   const { data: currentTicket, error: ticketError } = await supabase.from("tickets")
-    .select("service_team_id, ccg_request_type").eq("id", ticketId).maybeSingle();
+    .select("service_team_id, ccg_request_type, status").eq("id", ticketId).maybeSingle();
   if (ticketError) return { error: ticketError.message };
   if (!currentTicket) return { error: "You cannot access this ticket." };
+  if (["resolved", "closed"].includes(currentTicket.status)) {
+    return { error: "This ticket is complete. The requester must reopen it before it can be routed." };
+  }
   if (actor.profile.user_side === "employee" && actor.profile.service_team_id !== currentTicket.service_team_id) {
     return { error: "You can only assign tickets for your service team." };
   }
@@ -1247,6 +1253,14 @@ export async function bulkUpdateTickets(formData: FormData) {
     patch.status = status as TicketStatus;
     patch.resolved_at = status === "resolved" ? new Date().toISOString() : null;
   } else return { error: "Choose an assignment or status action." };
+
+  const { data: selectedTickets, error: selectedTicketsError } = await supabase
+    .from("tickets").select("id, status").in("id", ids);
+  if (selectedTicketsError) return { error: selectedTicketsError.message };
+  if ((selectedTickets ?? []).length !== ids.length) return { error: "Some selected tickets are unavailable to you." };
+  if ((selectedTickets ?? []).some((ticket) => ["resolved", "closed"].includes(ticket.status))) {
+    return { error: "Completed tickets must be reopened by their requester before they can be updated." };
+  }
 
   const { data, error } = await supabase.from("tickets").update(patch).in("id", ids).select("id");
   if (error) return { error: error.message };
