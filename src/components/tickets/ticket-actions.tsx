@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { PriorityMatrixGuide } from "@/components/tickets/priority-matrix-guide";
-import { createFaqDraftFromTicket, escalateIncidentToSoftwareCsr, reviewTicketPriority, routeTicket, updateTicketStatus } from "@/lib/actions";
-import { calculateTicketPriority, needsTicketPriorityReview } from "@/lib/utils";
+import { createFaqDraftFromTicket, escalateIncidentToSoftwareCsr, routeTicket, updateTicketStatus } from "@/lib/actions";
+import { calculateTicketPriority } from "@/lib/utils";
 import type { CcgDatabaseResult, CcgFollowupStatus, EmployeeRole, Profile, Ticket, TicketImpact, TicketStatus, TicketUrgency } from "@/lib/types";
 
 const ticketStatuses: TicketStatus[] = [
@@ -50,11 +50,6 @@ export function TicketActions({
   const [statusFailed, setStatusFailed] = useState(false);
   const [impact, setImpact] = useState<TicketImpact>(ticket.impact ?? "medium");
   const [urgency, setUrgency] = useState<TicketUrgency>(ticket.urgency ?? "medium");
-  const [reviewImpact, setReviewImpact] = useState<TicketImpact>(ticket.impact ?? "medium");
-  const [reviewUrgency, setReviewUrgency] = useState<TicketUrgency>(ticket.urgency ?? "medium");
-  const [priorityReviewMessage, setPriorityReviewMessage] = useState<string | null>(null);
-  const [priorityReviewFailed, setPriorityReviewFailed] = useState(false);
-  const [reviewingPriority, setReviewingPriority] = useState(false);
   const [creatingFaq, setCreatingFaq] = useState(false);
   const [faqMessage, setFaqMessage] = useState<string | null>(null);
   const [faqError, setFaqError] = useState(false);
@@ -67,12 +62,6 @@ export function TicketActions({
       && profile.service_team_id === ticket.service_team_id
       && (roles.includes("Personnel") || roles.includes("Coordinator"))
       && (!ticket.is_confidential || ticket.assigned_to === profile.id));
-  const canReviewPriority = profile.user_side === "employee"
-    && Boolean(profile.service_team_id)
-    && profile.service_team_id === ticket.service_team_id
-    && roles.includes("Personnel")
-    && !canRoute
-    && !["resolved", "closed", "rejected"].includes(ticket.status);
   const canCreateFaqDraft = !ticket.is_confidential
     && ["resolved", "closed"].includes(ticket.status)
     && Boolean(ticket.resolution_notes?.trim())
@@ -230,29 +219,6 @@ export function TicketActions({
     }
   }
 
-  async function handlePriorityReview(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (reviewingPriority) return;
-    setReviewingPriority(true);
-    setPriorityReviewMessage(null);
-    setPriorityReviewFailed(false);
-    try {
-      const result = await reviewTicketPriority(new FormData(event.currentTarget));
-      if ("error" in result) {
-        setPriorityReviewFailed(true);
-        setPriorityReviewMessage(result.error ?? "Priority review could not be saved.");
-        return;
-      }
-      setPriorityReviewMessage(result.success ?? "Priority review saved.");
-      router.refresh();
-    } catch {
-      setPriorityReviewFailed(true);
-      setPriorityReviewMessage("Priority review could not be saved. Please try again.");
-    } finally {
-      setReviewingPriority(false);
-    }
-  }
-
   async function handleCreateFaqDraft() {
     if (creatingFaq) return;
     setCreatingFaq(true);
@@ -329,34 +295,6 @@ export function TicketActions({
               </Button>
             </div>
           )}
-          {canReviewPriority && (
-            <form onSubmit={handlePriorityReview} className="grid gap-3 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
-              <input type="hidden" name="ticket_id" value={ticket.id} />
-              <div>
-                <h3 className="text-sm font-bold text-navy">Review impact and urgency</h3>
-                <p className="mt-1 text-xs leading-5 text-slate-600">
-                  {needsTicketPriorityReview(ticket)
-                    ? `Requester reported ${ticket.reported_impact} impact and ${ticket.reported_urgency} urgency. High ratings are held at Medium until reviewed.`
-                    : "Confirm or adjust the requester’s impact and urgency to set the ticket’s service level."}
-                </p>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-1.5 text-xs font-semibold text-slate-700">Confirmed impact
-                  <select name="impact" value={reviewImpact} onChange={(event) => setReviewImpact(event.target.value as TicketImpact)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring">
-                    <option value="low">Low — limited impact / workaround available</option><option value="medium">Medium — team or important task affected</option><option value="high">High — critical service or many users affected</option>
-                  </select>
-                </label>
-                <label className="grid gap-1.5 text-xs font-semibold text-slate-700">Confirmed urgency
-                  <select name="urgency" value={reviewUrgency} onChange={(event) => setReviewUrgency(event.target.value as TicketUrgency)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring">
-                    <option value="low">Low — can be scheduled</option><option value="medium">Medium — needs attention soon</option><option value="high">High — work or service is blocked</option>
-                  </select>
-                </label>
-              </div>
-              <p className="rounded-lg bg-white/80 px-3 py-2 text-xs text-slate-700">Confirmed priority: <strong className="capitalize">{calculateTicketPriority(reviewImpact, reviewUrgency)}</strong></p>
-              {priorityReviewMessage && <p role={priorityReviewFailed ? "alert" : "status"} className={`text-sm ${priorityReviewFailed ? "text-red-700" : "text-resolved"}`}>{priorityReviewMessage}</p>}
-              <Button type="submit" variant="secondary" loading={reviewingPriority}><Save className="h-4 w-4" />Save priority review</Button>
-            </form>
-          )}
           {canRoute && activeTicket && (
             <form onSubmit={handleRoute} className="grid gap-3 border-b border-slate-100 pb-4">
               <p className="text-xs leading-5 text-slate-600">
@@ -394,15 +332,6 @@ export function TicketActions({
                 <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-900 sm:col-span-2">Priority matrix result: <strong className="capitalize">{calculatedPriority}</strong></p>
                 <div className="sm:col-span-2"><PriorityMatrixGuide /></div>
               </div>
-              <label className="grid gap-1.5 text-xs font-semibold text-slate-700">
-                Due date
-                <input
-                  name="due_date"
-                  type="date"
-                  defaultValue={ticket.due_date ?? ""}
-                  className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal focus-ring"
-                />
-              </label>
               <input type="hidden" name="status" value={routingStatus} />
               {routingMessage && (
                 <p role={routingFailed ? "alert" : "status"} className={`text-sm ${routingFailed ? "text-red-700" : "text-resolved"}`}>{routingMessage}</p>

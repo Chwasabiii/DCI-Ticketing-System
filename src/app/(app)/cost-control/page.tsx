@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, Calculator, Clock3, Plus, Ticket } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
-import { getCurrentContext, getServiceTeams, getTeamTickets } from "@/lib/data";
+import { getCurrentContext, getServiceTeams, getTeamTickets, getTicketSlaPolicies } from "@/lib/data";
 
 export default async function CostControlPage() {
   const [{ profile }, teams] = await Promise.all([
@@ -15,7 +15,7 @@ export default async function CostControlPage() {
 
   const team = teams.find((item) => item.slug === "cost-control");
   if (!team) throw new Error("The Cost Control Group service team is not configured.");
-  const tickets = await getTeamTickets(team.id);
+  const [tickets, slaPolicies] = await Promise.all([getTeamTickets(team.id), getTicketSlaPolicies()]);
   const isProvider = profile.user_side === "employee";
   const active = tickets.filter((ticket) => !["resolved", "closed", "rejected"].includes(ticket.status));
   const pending = tickets.filter((ticket) => ticket.status === "open");
@@ -45,7 +45,7 @@ export default async function CostControlPage() {
           <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><Ticket className="h-5 w-5" /></span><div><h2 className="font-bold text-navy">{isProvider ? "CCG request inbox" : "Your CCG requests"}</h2><p className="text-xs text-slate-500">{tickets.length} request{tickets.length === 1 ? "" : "s"}</p></div></div>
           {!isProvider && <Link href="/tickets" className="inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">All tickets <ArrowRight className="h-4 w-4" /></Link>}
         </div>
-        <TicketTable tickets={tickets} />
+        <TicketTable tickets={tickets} slaPolicies={slaPolicies} />
       </section>
     </div>
   );

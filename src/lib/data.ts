@@ -108,12 +108,12 @@ export async function getTickets(limit = 50) {
   return data ?? [];
 }
 
-const queueTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, is_confidential, assigned_to, due_date, created_at, resolved_at, first_response_at, resolution_notes";
+const queueTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, is_confidential, assigned_to, due_date, created_at, reopened_at, resolved_at, first_response_at, resolution_notes";
 
-const dashboardTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, is_confidential, request_type, service_category, ccg_request_type, ccg_stage_due_at, due_date, created_at, resolved_at, service_team_id";
+const dashboardTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, is_confidential, request_type, service_category, ccg_request_type, ccg_stage_due_at, due_date, created_at, reopened_at, resolved_at, service_team_id";
 
 const performanceTicketSelection = "status, priority, assigned_to, first_response_at, resolved_at, created_at, reopened_at, due_date, ccg_request_type, ccg_stage_due_at, ccg_vendor_due_at, ccg_vendor_expected_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds";
-const reportSummarySelection = "status, priority, created_at, due_date, resolved_at, ccg_request_type, ccg_stage_due_at";
+const reportSummarySelection = "status, priority, created_at, reopened_at, resolved_at, ccg_request_type, ccg_stage_due_at";
 
 export async function getServiceTeams({ inScopeOnly = false }: { inScopeOnly?: boolean } = {}): Promise<ServiceTeam[]> {
   const supabase = await createClient();
@@ -220,7 +220,7 @@ export async function getReportSummaryTickets({
 }) {
   const supabase = await createClient();
   const pageSize = 1000;
-  const tickets: Array<Pick<Ticket, "status" | "priority" | "created_at" | "due_date" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">> = [];
+  const tickets: Array<Pick<Ticket, "status" | "priority" | "created_at" | "reopened_at" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">> = [];
   for (let offset = 0; ; offset += pageSize) {
     let query = supabase.from("tickets").select(reportSummarySelection).order("created_at", { ascending: false });
     if (startDate) query = query.gte("created_at", `${startDate}T00:00:00.000Z`);
@@ -296,7 +296,7 @@ export async function getProfileSummary(id: string, ticketId: string) {
 
 export async function getTicketActivity(ticketId: string): Promise<TicketActivity[]> {
   const supabase = await createClient();
-  const [eventsResult, commentsResult] = await Promise.all([
+  const [eventsResult, commentsResult, profilesResult] = await Promise.all([
     supabase
       .from("ticket_events")
       .select("id, ticket_id, actor_id, event_type, from_status, to_status, note, created_at")
@@ -308,7 +308,8 @@ export async function getTicketActivity(ticketId: string): Promise<TicketActivit
       .select("id, ticket_id, author_id, body, is_internal, created_at")
       .eq("ticket_id", ticketId)
       .order("created_at", { ascending: true })
-      .returns<Comment[]>()
+      .returns<Comment[]>(),
+    supabase.rpc("get_ticket_activity_profiles", { p_ticket_id: Number(ticketId) })
   ]);
 
   if (eventsResult.error) {
@@ -320,17 +321,6 @@ export async function getTicketActivity(ticketId: string): Promise<TicketActivit
 
   const events = eventsResult.data ?? [];
   const comments = commentsResult.data ?? [];
-  const actorIds = Array.from(
-    new Set([
-      ...events.map((event) => event.actor_id),
-      ...comments.map((comment) => comment.author_id)
-    ].filter((id): id is string => Boolean(id)))
-  );
-
-  const profilesResult = actorIds.length
-    ? await supabase.rpc("get_ticket_activity_profiles", { p_ticket_id: Number(ticketId) })
-    : { data: [], error: null };
-
   if (profilesResult.error) {
     throw new Error(`Could not load ticket activity authors: ${profilesResult.error.message}`);
   }

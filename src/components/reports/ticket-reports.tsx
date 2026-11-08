@@ -1,5 +1,5 @@
-import type { Ticket } from "@/lib/types";
-import { isTicketOverdue } from "@/lib/utils";
+import type { Ticket, TicketSlaPolicy } from "@/lib/types";
+import { isTicketResolutionOverdue } from "@/lib/utils";
 import { TicketReportExportButton } from "@/components/reports/ticket-report-export-button";
 
 function Distribution({ title, values }: { title: string; values: Array<[string, number]> }) {
@@ -29,11 +29,13 @@ function Distribution({ title, values }: { title: string; values: Array<[string,
 export function TicketReports({
   tickets,
   canExport,
-  exportHref = "/api/ticket-report.csv"
+  exportHref = "/api/ticket-report.csv",
+  slaPolicies = []
 }: {
-  tickets: Array<Pick<Ticket, "status" | "priority" | "created_at" | "due_date" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">>;
+  tickets: Array<Pick<Ticket, "status" | "priority" | "created_at" | "reopened_at" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">>;
   canExport: boolean;
   exportHref?: string;
+  slaPolicies?: TicketSlaPolicy[];
 }) {
   const statuses = new Map<string, number>();
   for (const ticket of tickets) statuses.set(ticket.status, (statuses.get(ticket.status) ?? 0) + 1);
@@ -45,7 +47,7 @@ export function TicketReports({
     ? resolvedDurations.reduce((sum, days) => sum + days, 0) / resolvedDurations.length
     : null;
   const openCount = tickets.filter((ticket) => !["resolved", "closed", "rejected"].includes(ticket.status)).length;
-  const overdueCount = tickets.filter((ticket) => isTicketOverdue(ticket)).length;
+  const overdueCount = tickets.filter((ticket) => isTicketResolutionOverdue(ticket, slaPolicies)).length;
   const sortedStatuses = [...statuses.entries()].sort((a, b) => b[1] - a[1]);
 
   return (

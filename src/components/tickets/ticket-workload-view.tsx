@@ -4,8 +4,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
-import type { Ticket } from "@/lib/types";
-import { isTicketOverdue } from "@/lib/utils";
+import type { Ticket, TicketSlaPolicy } from "@/lib/types";
+import { isTicketResolutionOverdue } from "@/lib/utils";
 
 type WorkloadFilter = "all" | "assigned" | "overdue";
 
@@ -15,7 +15,7 @@ const filters: Array<{ value: WorkloadFilter; label: string }> = [
   { value: "overdue", label: "Overdue" }
 ];
 
-export function TicketWorkloadView({ tickets, currentUserId }: { tickets: Ticket[]; currentUserId?: string }) {
+export function TicketWorkloadView({ tickets, currentUserId, slaPolicies = [] }: { tickets: Ticket[]; currentUserId?: string; slaPolicies?: TicketSlaPolicy[] }) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
   const [filter, setFilter] = useState<WorkloadFilter>("all");
@@ -24,7 +24,7 @@ export function TicketWorkloadView({ tickets, currentUserId }: { tickets: Ticket
     if (filter === "assigned") {
       return ticket.assigned_to === currentUserId && !["resolved", "closed", "rejected"].includes(ticket.status);
     }
-    if (filter === "overdue") return isTicketOverdue(ticket);
+    if (filter === "overdue") return isTicketResolutionOverdue(ticket, slaPolicies);
     return true;
   });
 
@@ -47,7 +47,7 @@ export function TicketWorkloadView({ tickets, currentUserId }: { tickets: Ticket
             <span className="ml-2 text-xs opacity-70">
               {item.value === "all" ? tickets.length : tickets.filter((ticket) => {
                 if (item.value === "assigned") return ticket.assigned_to === currentUserId && !["resolved", "closed", "rejected"].includes(ticket.status);
-                return isTicketOverdue(ticket);
+                return isTicketResolutionOverdue(ticket, slaPolicies);
               }).length}
             </span>
           </button>
@@ -57,7 +57,7 @@ export function TicketWorkloadView({ tickets, currentUserId }: { tickets: Ticket
         <span>{refreshing ? "Updating tickets…" : tickets.length ? "Tickets up to date" : "No tickets to show"}</span>
         <button type="button" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing} className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 font-semibold text-accent hover:bg-blue-50 disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
       </div>
-      <TicketTable tickets={visibleTickets} />
+      <TicketTable tickets={visibleTickets} slaPolicies={slaPolicies} />
     </section>
   );
 }

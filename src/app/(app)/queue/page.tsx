@@ -1,8 +1,9 @@
 import { TicketTable } from "@/components/tickets/ticket-table";
-import { getTickets } from "@/lib/data";
+import { getTicketSlaPolicies, getTickets } from "@/lib/data";
 
 export default async function QueuePage() {
-  const tickets = (await getTickets(100)).filter((ticket) =>
+  const [allTickets, slaPolicies] = await Promise.all([getTickets(100), getTicketSlaPolicies()]);
+  const tickets = allTickets.filter((ticket) =>
     ["open", "under_review"].includes(ticket.status)
   );
 
@@ -14,7 +15,7 @@ export default async function QueuePage() {
           Review new requests, set priority, and assign an active employee.
         </p>
       </div>
-      <TicketTable tickets={tickets} />
+      <TicketTable tickets={tickets} slaPolicies={slaPolicies} />
     </div>
   );
 }

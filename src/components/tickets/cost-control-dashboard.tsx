@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { ArrowRight, BarChart3, Calculator, Clock3, FileText } from "lucide-react";
-import type { Ticket } from "@/lib/types";
+import type { Ticket, TicketSlaPolicy } from "@/lib/types";
 import { TicketTable } from "@/components/tickets/ticket-table";
 
-export function CostControlDashboard({ tickets, name }: { tickets: Ticket[]; name: string | null }) {
+export function CostControlDashboard({ tickets, name, slaPolicies = [] }: { tickets: Ticket[]; name: string | null; slaPolicies?: TicketSlaPolicy[] }) {
   const active = tickets.filter((ticket) => !["resolved", "closed", "rejected"].includes(ticket.status));
   const waiting = tickets.filter((ticket) => ticket.status === "waiting_for_info");
   const resolved = tickets.filter((ticket) => ["resolved", "closed"].includes(ticket.status));
@@ -34,7 +34,7 @@ export function CostControlDashboard({ tickets, name }: { tickets: Ticket[]; nam
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft sm:p-6">
         <div className="mb-4 flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Cost Control Group</p><h2 className="mt-1 text-xl font-bold text-navy">Recent team tickets</h2></div><Link href="/inbox" className="text-sm font-semibold text-accent hover:underline">Go to inbox</Link></div>
-        <TicketTable tickets={tickets.slice(0, 8)} />
+        <TicketTable tickets={tickets.slice(0, 8)} slaPolicies={slaPolicies} />
       </section>
     </div>
   );

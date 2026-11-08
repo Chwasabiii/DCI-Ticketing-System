@@ -2,12 +2,12 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { Plus, Ticket } from "lucide-react";
 import { TicketWorkloadView } from "@/components/tickets/ticket-workload-view";
-import { getCurrentProfile, getTickets } from "@/lib/data";
+import { getCurrentProfile, getTicketSlaPolicies, getTickets } from "@/lib/data";
 import { TicketDraftsList } from "@/components/tickets/ticket-drafts-list";
 
 async function TicketWorkloadSection({ currentUserId }: { currentUserId?: string }) {
-  const tickets = await getTickets(100);
-  return <TicketWorkloadView tickets={tickets} currentUserId={currentUserId} />;
+  const [tickets, slaPolicies] = await Promise.all([getTickets(100), getTicketSlaPolicies()]);
+  return <TicketWorkloadView tickets={tickets} currentUserId={currentUserId} slaPolicies={slaPolicies} />;
 }
 
 function TicketWorkloadSkeleton() {

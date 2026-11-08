@@ -1,5 +1,7 @@
-import { getCurrentContext } from "@/lib/data";
+import { getCurrentContext, getTicketSlaPolicies } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
+import { getTicketResolutionDueLabel } from "@/lib/utils";
+import type { Ticket } from "@/lib/types";
 
 const pageSize = 1000;
 const allowedStatuses = new Set([
@@ -19,7 +21,7 @@ function csvCell(value: unknown) {
 }
 
 export async function GET(request: Request) {
-  const [{ profile }, supabase] = await Promise.all([getCurrentContext(), createClient()]);
+  const [{ profile }, supabase, slaPolicies] = await Promise.all([getCurrentContext(), createClient(), getTicketSlaPolicies()]);
   if (profile?.user_side !== "admin" || profile.status !== "active") {
     return new Response("Forbidden", { status: 403 });
   }
@@ -34,13 +36,13 @@ export async function GET(request: Request) {
 
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(new TextEncoder().encode("\uFEFFTicket,Title,Status,Priority,Created,Due date,Resolved\r\n"));
+      controller.enqueue(new TextEncoder().encode("\uFEFFTicket,Title,Status,Priority,Created,Resolution target,Resolved\r\n"));
     },
     async pull(controller) {
       if (finished) return;
       let query = supabase
         .from("tickets")
-        .select("id, ticket_no, title, status, priority, created_at, due_date, resolved_at")
+        .select("id, ticket_no, title, status, priority, created_at, reopened_at, resolved_at")
         .order("created_at", { ascending: false })
         .range(offset, offset + pageSize - 1);
       if (startDate) query = query.gte("created_at", `${startDate}T00:00:00.000Z`);
@@ -66,7 +68,7 @@ export async function GET(request: Request) {
           ticket.status,
           ticket.priority,
           ticket.created_at,
-          ticket.due_date,
+          getTicketResolutionDueLabel(ticket as Ticket, slaPolicies),
           ticket.resolved_at
         ].map(csvCell).join(",")).join("\r\n");
         controller.enqueue(new TextEncoder().encode(`${lines}\r\n`));

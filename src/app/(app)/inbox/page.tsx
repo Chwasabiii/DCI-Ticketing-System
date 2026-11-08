@@ -16,18 +16,17 @@ export default async function TriageInboxPage({
   ]);
   if (!profile) redirect("/login");
   if (profile.user_side === "client") redirect("/tickets");
-  const tickets = await getInboxTickets(
-    profile.user_side === "employee" ? profile.service_team_id ?? -1 : undefined
-  );
-
   const initialView = allowedViews.find((view) => view === params.view) ?? "all";
   const isItSupportProvider = profile.user_side === "employee" && profile.service_team?.slug === "it-support";
   const canAssign = profile.user_side === "admin" || isItSupportProvider || roleNames.includes("Coordinator");
   const canChangeStatus = profile.user_side === "admin" || isItSupportProvider || roleNames.includes("Personnel") || roleNames.includes("Coordinator");
   const canBulkChangeStatus = profile.user_side === "admin" || isItSupportProvider || roleNames.includes("Personnel");
-  const employees = canAssign
-    ? await getAssignableEmployees(profile.user_side === "employee" ? profile.service_team_id : undefined)
-    : [];
+  const [tickets, employees] = await Promise.all([
+    getInboxTickets(profile.user_side === "employee" ? profile.service_team_id ?? -1 : undefined),
+    canAssign
+      ? getAssignableEmployees(profile.user_side === "employee" ? profile.service_team_id : undefined)
+      : Promise.resolve([])
+  ]);
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5">

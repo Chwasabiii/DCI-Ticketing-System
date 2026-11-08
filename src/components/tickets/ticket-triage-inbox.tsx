@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Bookmark, Trash2 } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
@@ -67,6 +67,11 @@ export function TicketTriageInbox({
     } catch { setSavedViews([]); }
   }, []);
 
+  const slaIndicatorsByTicket = useMemo(
+    () => new Map(tickets.map((ticket) => [ticket.id, getTicketSlaIndicators(ticket, slaPolicies)])),
+    [tickets, slaPolicies]
+  );
+
   function persistSavedViews(next: SavedView[]) {
     setSavedViews(next);
     localStorage.setItem(savedViewsStorageKey, JSON.stringify(next));
@@ -124,7 +129,7 @@ export function TicketTriageInbox({
       return active && !ticket.assigned_to;
     }
     if (target === "mine") return active && ticket.assigned_to === currentUserId;
-    return active && (isTicketOverdue(ticket) || getTicketSlaIndicators(ticket, slaPolicies).some((indicator) => indicator.state === "breached"));
+    return active && (isTicketOverdue(ticket) || (slaIndicatorsByTicket.get(ticket.id) ?? []).some((indicator) => indicator.state === "breached"));
   }
 
   const statusOptions = Array.from(new Set(tickets.filter((ticket) => activeStatuses.has(ticket.status)).map((ticket) => ticket.status))).sort();
@@ -147,7 +152,7 @@ export function TicketTriageInbox({
       action = "Assigned to a teammate";
     }
     if (isTicketOverdue(ticket)) action = `Overdue - ${action}`;
-    else if (getTicketSlaIndicators(ticket, slaPolicies).some((indicator) => indicator.state === "breached")) action = `SLA overdue - ${action}`;
+    else if ((slaIndicatorsByTicket.get(ticket.id) ?? []).some((indicator) => indicator.state === "breached")) action = `SLA overdue - ${action}`;
     return [String(ticket.id), action];
   }));
 

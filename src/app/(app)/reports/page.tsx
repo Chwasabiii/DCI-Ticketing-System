@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { TicketReports } from "@/components/reports/ticket-reports";
 import { TicketTable } from "@/components/tickets/ticket-table";
-import { getCurrentContext, getReportSummaryTickets, getReportTickets } from "@/lib/data";
+import { getCurrentContext, getReportSummaryTickets, getReportTickets, getTicketSlaPolicies } from "@/lib/data";
 import type { TicketStatus } from "@/lib/types";
 
 const statuses: TicketStatus[] = ["open", "under_review", "assigned", "in_progress", "waiting_for_info", "resolved", "closed", "rejected"];
@@ -26,10 +26,11 @@ export default async function ReportsPage({
     : undefined;
   const requestedPage = typeof params.page === "string" ? Number(params.page) : 1;
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const [{ profile }, reportPage, summaryTickets] = await Promise.all([
+  const [{ profile }, reportPage, summaryTickets, slaPolicies] = await Promise.all([
     getCurrentContext(),
     getReportTickets({ startDate: startValue, endDate: endValue, status: statusValue, page, pageSize }),
-    getReportSummaryTickets({ startDate: startValue, endDate: endValue, status: statusValue })
+    getReportSummaryTickets({ startDate: startValue, endDate: endValue, status: statusValue }),
+    getTicketSlaPolicies()
   ]);
   const totalPages = Math.max(1, Math.ceil(reportPage.totalCount / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -64,7 +65,7 @@ export default async function ReportsPage({
         <Link href="/reports" className="focus-ring inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Clear</Link>
       </form>
 
-      <TicketReports tickets={summaryTickets} canExport={profile?.user_side === "admin" && profile.status === "active"} exportHref={exportHref} />
+      <TicketReports tickets={summaryTickets} canExport={profile?.user_side === "admin" && profile.status === "active"} exportHref={exportHref} slaPolicies={slaPolicies} />
 
       <section className="space-y-3" aria-label="Ticket report results">
         <div className="flex flex-wrap items-end justify-between gap-3">
@@ -74,7 +75,7 @@ export default async function ReportsPage({
             {currentPage < totalPages ? <Link className="focus-ring inline-flex min-h-10 items-center rounded-lg border border-slate-200 px-3 text-sm font-semibold hover:bg-white" href={makePageUrl(currentPage + 1)}>Next</Link> : <span className="inline-flex min-h-10 items-center rounded-lg border border-slate-100 px-3 text-sm text-slate-400">Next</span>}
           </nav>
         </div>
-        <TicketTable tickets={visibleTickets} />
+        <TicketTable tickets={visibleTickets} slaPolicies={slaPolicies} />
       </section>
     </div>
   );

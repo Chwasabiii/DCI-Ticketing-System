@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, FileText, LockKeyhole, Paperclip } from "lucide-react";
 import { TicketActions } from "@/components/tickets/ticket-actions";
 import { TicketQueueActions } from "@/components/tickets/ticket-queue-actions";
+import { TicketPriorityReview } from "@/components/tickets/ticket-priority-review";
 import { AttachmentUploader } from "@/components/tickets/attachment-uploader";
 import { TicketActivityTimeline } from "@/components/tickets/ticket-activity-timeline";
 import { TicketHandoffForm } from "@/components/tickets/ticket-handoff-form";
@@ -21,7 +22,7 @@ import {
   getProfileSummary,
   getTicketSlaPolicies,
 } from "@/lib/data";
-import { formatDate, formatDateTime, needsTicketPriorityReview } from "@/lib/utils";
+import { formatDate, formatDateTime, getTicketResolutionDueLabel, needsTicketPriorityReview } from "@/lib/utils";
 
 function formatElapsed(seconds: number) {
   const hours = Math.floor(seconds / 3600);
@@ -107,6 +108,12 @@ export default async function TicketDetailPage({
       (context.roleNames.includes("Personnel") || context.roleNames.includes("Coordinator")) &&
       (!ticket.is_confidential || ticket.assigned_to === context.profile.id));
   const ticketIsActive = !["resolved", "closed", "rejected"].includes(ticket.status);
+  const canReviewTicketPriority = context.profile.user_side === "employee"
+    && Boolean(context.profile.service_team_id)
+    && context.profile.service_team_id === ticket.service_team_id
+    && context.roleNames.includes("Personnel")
+    && !context.roleNames.includes("Coordinator")
+    && ticketIsActive;
   const ticketListHref = context.profile.user_side === "client" ? "/tickets" : "/inbox";
   const ticketListLabel = context.profile.user_side === "client" ? "Back to my tickets" : "Back to triage inbox";
   const canUseQuickActions = ticket.service_team?.slug === "it-support"
@@ -193,7 +200,7 @@ export default async function TicketDetailPage({
               ["Service team", ticket.service_team?.name ?? "Unassigned"],
               ["Reported impact / urgency", ticket.reported_impact && ticket.reported_urgency ? `${ticket.reported_impact} impact · ${ticket.reported_urgency} urgency` : "Not recorded"],
               ["Priority review", needsTicketPriorityReview(ticket) ? "Pending service team review" : ticket.priority_reviewed_at ? "Reviewed by service team" : "No elevated rating to review"],
-              ["Due date", formatDate(ticket.due_date)],
+              ["Resolution target", getTicketResolutionDueLabel(ticket, slaPolicies)],
               ["Assigned handler", people.assignee?.full_name?.trim() || people.assignee?.email || "Service team (not yet assigned)"]
             ].map(([label, value]) => (
               <div key={label} className="min-h-[76px] rounded-xl border border-slate-100 bg-gradient-to-br from-white to-slate-50/80 px-3.5 py-3 shadow-sm">
@@ -223,9 +230,9 @@ export default async function TicketDetailPage({
               {ticket.ccg_database_result && <p className="mt-2 text-xs font-semibold text-emerald-900">Database result: {ticket.ccg_database_result === "not_required" ? "not required for a whole BOQ" : ticket.ccg_database_result}</p>}
               {ticket.ccg_followup_type && <p className="mt-1 text-xs font-semibold text-emerald-900">{ccgFollowupLabel}: {(ticket.ccg_followup_status ?? "pending").replaceAll("_", " ")}</p>}
               <div className="mt-3 grid gap-2 rounded-lg border border-emerald-100 bg-white/80 p-3 text-xs sm:grid-cols-2">
-                <p><span className="font-bold text-slate-700">CCG-controlled deadline: </span>{ticket.status === "waiting_for_info" ? "Paused while awaiting requester" : formatDateTime(ticket.ccg_stage_due_at)}</p>
-                {ticket.ccg_vendor_expected_at && <p><span className="font-bold text-slate-700">Vendor expected by: </span>{formatDateTime(ticket.ccg_vendor_expected_at)}</p>}
-                {ticket.ccg_vendor_due_at && <p><span className="font-bold text-slate-700">Vendor target limit: </span>{formatDateTime(ticket.ccg_vendor_due_at)} (CCG clock paused)</p>}
+                <p><span className="font-bold text-slate-700">CCG service target: </span>{getTicketResolutionDueLabel(ticket, slaPolicies)}</p>
+                {ticket.ccg_vendor_expected_at && <p><span className="font-bold text-slate-700">Vendor expected in: </span>{getTicketResolutionDueLabel({ ...ticket, ccg_stage_due_at: ticket.ccg_vendor_expected_at }, slaPolicies)}</p>}
+                {ticket.ccg_vendor_due_at && <p><span className="font-bold text-slate-700">Vendor target limit: </span>{getTicketResolutionDueLabel({ ...ticket, ccg_stage_due_at: ticket.ccg_vendor_due_at }, slaPolicies)} (CCG clock paused)</p>}
                 {ticket.ccg_vendor_wait_started_at && <p className="text-amber-800"><span className="font-bold">Waiting on vendor since: </span>{formatDateTime(ticket.ccg_vendor_wait_started_at)}</p>}
                 {(ticket.ccg_vendor_wait_seconds ?? 0) > 0 && <p><span className="font-bold text-slate-700">Recorded vendor wait: </span>{formatElapsed(ticket.ccg_vendor_wait_seconds ?? 0)}</p>}
               </div>
@@ -253,6 +260,37 @@ export default async function TicketDetailPage({
               <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">{ticket.resolution_notes}</p>
             </div>
           )}
+          <section className="mt-6 rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><Paperclip className="h-5 w-5" /></span>
+                <div><h2 className="text-base font-bold text-navy">Attachments</h2><p className="mt-0.5 text-xs text-slate-500">Files shared with this request</p></div>
+              </div>
+              <span className="rounded-full bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">{attachments.length}</span>
+            </div>
+            {attachments.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center">
+                <p className="text-sm font-medium text-slate-600">No files attached yet</p>
+                <p className="mt-1 text-xs text-slate-500">Add a document or image if it helps explain the request.</p>
+              </div>
+            ) : (
+              <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+                {attachments.map((attachment) => (
+                  <li key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-3">
+                    <Paperclip aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
+                    {attachment.signed_url ? (
+                      <a href={attachment.signed_url} className="truncate text-sm font-semibold text-accent hover:underline">
+                        {attachment.file_name}
+                      </a>
+                    ) : (
+                      <span className="text-sm text-slate-500">{attachment.file_name} (temporarily unavailable)</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <AttachmentUploader ticketId={String(ticket.id)} userId={context.profile.id} />
+          </section>
         </div>
         </div>
         {(canUseQuickActions || canViewTicketActions) && <aside className="h-full space-y-5 xl:sticky xl:top-5">
@@ -293,48 +331,11 @@ export default async function TicketDetailPage({
             people={routeOptions.people}
             resolvedBy={resolvedBy}
           />}
+          {canReviewTicketPriority && <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_8px_30px_rgba(20,40,75,0.06)] sm:p-5">
+            <TicketPriorityReview ticket={ticket} />
+          </section>}
         </aside>}
         </div>
-
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_8px_30px_rgba(20,40,75,0.06)] sm:p-6">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-xl bg-indigo-50 text-indigo-600"><Paperclip className="h-5 w-5" /></span>
-              <div><h2 className="text-base font-bold text-navy">Attachments</h2><p className="mt-0.5 text-xs text-slate-500">Files shared with this request</p></div>
-            </div>
-            <span className="rounded-full bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">{attachments.length}</span>
-          </div>
-          {attachments.length === 0 ? (
-            <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-center">
-              <p className="text-sm font-medium text-slate-600">No files attached yet</p>
-              <p className="mt-1 text-xs text-slate-500">Add a document or image if it helps explain the request.</p>
-            </div>
-          ) : (
-            <ul className="mt-4 grid gap-2 sm:grid-cols-2">
-              {attachments.map((attachment) => (
-                <li key={attachment.id} className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3.5 py-3">
-                  <Paperclip aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-400" />
-                  {attachment.signed_url ? (
-                    <a
-                      href={attachment.signed_url}
-                      className="truncate text-sm font-semibold text-accent hover:underline"
-                    >
-                      {attachment.file_name}
-                    </a>
-                  ) : (
-                    <span className="text-sm text-slate-500">
-                      {attachment.file_name} (temporarily unavailable)
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          <AttachmentUploader
-            ticketId={String(ticket.id)}
-            userId={context.profile.id}
-          />
-        </section>
 
         <RelatedTickets
           ticketId={String(ticket.id)}

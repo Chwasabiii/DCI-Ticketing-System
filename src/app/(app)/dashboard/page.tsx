@@ -14,8 +14,8 @@ import {
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { TicketReports } from "@/components/reports/ticket-reports";
 import { CostControlDashboard } from "@/components/tickets/cost-control-dashboard";
-import { getDashboardTickets, getCurrentContext } from "@/lib/data";
-import { isTicketOverdue } from "@/lib/utils";
+import { getDashboardTickets, getCurrentContext, getTicketSlaPolicies } from "@/lib/data";
+import { isTicketResolutionOverdue } from "@/lib/utils";
 
 function StatCard({
   label,
@@ -55,13 +55,13 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  const { profile, roleNames } = await getCurrentContext();
+  const [{ profile, roleNames }, slaPolicies] = await Promise.all([getCurrentContext(), getTicketSlaPolicies()]);
   const tickets = await getDashboardTickets(
     profile?.user_side === "employee" ? profile.service_team_id ?? -1 : undefined
   );
 
   if (profile?.user_side === "employee" && profile.service_team?.slug === "cost-control") {
-    return <CostControlDashboard tickets={tickets} name={profile.full_name} />;
+    return <CostControlDashboard tickets={tickets} name={profile.full_name} slaPolicies={slaPolicies} />;
   }
 
   const visibleTickets = tickets;
@@ -74,7 +74,7 @@ export default async function DashboardPage() {
   const resolved = visibleTickets.filter(
     (ticket) => ticket.status === "resolved" || ticket.status === "closed"
   ).length;
-  const overdue = active.filter((ticket) => isTicketOverdue(ticket)).length;
+  const overdue = active.filter((ticket) => isTicketResolutionOverdue(ticket, slaPolicies)).length;
   const roleLabel =
     profile?.user_side === "client"
       ? "Your support workspace"
@@ -180,6 +180,7 @@ export default async function DashboardPage() {
       <TicketReports
         tickets={visibleTickets}
         canExport={profile?.user_side === "admin" && profile.status === "active"}
+        slaPolicies={slaPolicies}
       />
 
       <section className={`grid items-start gap-6 ${isEndUser || urgent > 0 ? "xl:grid-cols-[minmax(0,1fr)_300px]" : "xl:grid-cols-1"}`}>
@@ -193,7 +194,7 @@ export default async function DashboardPage() {
               View all <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
-        <TicketTable tickets={visibleTickets.slice(0, 8)} />
+        <TicketTable tickets={visibleTickets.slice(0, 8)} slaPolicies={slaPolicies} />
         </div>
 
         <aside className="space-y-4">

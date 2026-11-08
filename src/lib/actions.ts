@@ -1115,7 +1115,6 @@ export async function routeTicket(formData: FormData) {
   const urgency = urgencies.find((option) => option === value(formData, "urgency"));
   const priority = impact && urgency ? calculateTicketPriority(impact, urgency) : null;
   const assignedTo = value(formData, "assigned_to");
-  const dueDate = value(formData, "due_date") || null;
   const requestedStatus = value(formData, "status");
   const allowedStatuses: TicketStatus[] = [
     "open",
@@ -1134,9 +1133,6 @@ export async function routeTicket(formData: FormData) {
   }
   if (["resolved", "closed", "rejected"].includes(status)) {
     return { error: "Routing cannot resolve, close, or reject a ticket. Use the ticket status action." };
-  }
-  if (dueDate && (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || Number.isNaN(Date.parse(`${dueDate}T00:00:00Z`)))) {
-    return { error: "Choose a valid due date." };
   }
 
   const { data: currentTicket, error: ticketError } = await supabase.from("tickets")
@@ -1173,7 +1169,6 @@ export async function routeTicket(formData: FormData) {
       impact,
       urgency,
       assigned_to: assignedTo,
-      due_date: dueDate,
       status,
       resolved_at: status === "resolved" ? new Date().toISOString() : null,
       priority_reviewed_at: new Date().toISOString(),

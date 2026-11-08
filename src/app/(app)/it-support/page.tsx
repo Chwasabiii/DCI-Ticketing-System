@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, Plus, Ticket } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
-import { getCurrentContext, getServiceTeams, getTeamTickets } from "@/lib/data";
+import { getCurrentContext, getServiceTeams, getTeamTickets, getTicketSlaPolicies } from "@/lib/data";
 
 export default async function ITSupportPage() {
   const [{ profile }, teams] = await Promise.all([
@@ -15,7 +15,7 @@ export default async function ITSupportPage() {
 
   const team = teams.find((item) => item.slug === "it-support");
   if (!team) throw new Error("The IT Support service team is not configured.");
-  const tickets = await getTeamTickets(team.id);
+  const [tickets, slaPolicies] = await Promise.all([getTeamTickets(team.id), getTicketSlaPolicies()]);
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
@@ -32,7 +32,7 @@ export default async function ITSupportPage() {
           <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-accent"><Ticket className="h-5 w-5" /></span><div><h2 className="font-bold text-navy">Your IT Support tickets</h2><p className="text-xs text-slate-500">{tickets.length} request{tickets.length === 1 ? "" : "s"}</p></div></div>
           <Link href="/tickets" className="inline-flex items-center gap-1 text-sm font-semibold text-accent hover:underline">All tickets <ArrowRight className="h-4 w-4" /></Link>
         </div>
-        <TicketTable tickets={tickets} />
+        <TicketTable tickets={tickets} slaPolicies={slaPolicies} />
       </section>
     </div>
   );

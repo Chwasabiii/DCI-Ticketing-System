@@ -26,18 +26,14 @@ export function localDateString(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-export function isTicketOverdue(ticket: Pick<Ticket, "ccg_request_type" | "ccg_stage_due_at" | "status" | "due_date">, today = localDateString()) {
+export function isTicketOverdue(ticket: Pick<Ticket, "ccg_request_type" | "ccg_stage_due_at" | "status">) {
   if (ticket.ccg_request_type) {
     return Boolean(ticket.ccg_stage_due_at
       && ticket.status !== "waiting_for_info"
       && !["resolved", "closed", "rejected"].includes(ticket.status)
       && Date.parse(ticket.ccg_stage_due_at) < Date.now());
   }
-  return Boolean(
-    ticket.due_date &&
-      ticket.due_date < today &&
-      !["resolved", "closed", "rejected"].includes(ticket.status)
-  );
+  return false;
 }
 
 export function addBusinessDays(start: number, businessDays: number) {
@@ -49,6 +45,66 @@ export function addBusinessDays(start: number, businessDays: number) {
     if (weekday !== 0 && weekday !== 6) addedDays += 1;
   }
   return deadline.getTime();
+}
+
+function businessDaysBetween(start: number, end: number) {
+  const currentDay = new Date(start);
+  currentDay.setUTCHours(0, 0, 0, 0);
+  const endDay = new Date(end);
+  endDay.setUTCHours(0, 0, 0, 0);
+  let businessDays = 0;
+  while (currentDay < endDay) {
+    currentDay.setUTCDate(currentDay.getUTCDate() + 1);
+    const weekday = currentDay.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) businessDays += 1;
+  }
+  return businessDays;
+}
+
+type TicketResolutionInput = Pick<Ticket, "priority" | "status" | "created_at" | "reopened_at" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">;
+
+export function getTicketResolutionDueLabel(ticket: TicketResolutionInput, policies: TicketSlaPolicy[], now = Date.now()) {
+  if (ticket.ccg_request_type) {
+    if (["resolved", "closed", "rejected"].includes(ticket.status)) {
+      if (ticket.resolved_at && ticket.ccg_stage_due_at) {
+        return Date.parse(ticket.resolved_at) <= Date.parse(ticket.ccg_stage_due_at) ? "Resolved within target" : "Resolved after target";
+      }
+      return "No active deadline";
+    }
+    if (ticket.status === "waiting_for_info") return "Paused while awaiting requester";
+    if (!ticket.ccg_stage_due_at) return "CCG service deadline";
+    return getBusinessDayCountdownLabel(Date.parse(ticket.ccg_stage_due_at), now);
+  }
+
+  const priorityGroup = ticket.priority === "high" || ticket.priority === "urgent" ? "high" : "standard";
+  const targetDays = policies.find((policy) => policy.priority_group === priorityGroup)?.resolution_business_days;
+  const startedAt = ticket.reopened_at ?? ticket.created_at;
+  if (!targetDays || !startedAt) return "SLA target not set";
+  const start = Date.parse(startedAt);
+  if (!Number.isFinite(start)) return "SLA target not set";
+  const deadline = addBusinessDays(start, targetDays);
+
+  if (ticket.resolved_at && ["resolved", "closed"].includes(ticket.status)) {
+    return Date.parse(ticket.resolved_at) <= deadline ? "Resolved within target" : "Resolved after target";
+  }
+  if (["closed", "rejected"].includes(ticket.status)) return "No active deadline";
+  return getBusinessDayCountdownLabel(deadline, now);
+}
+
+export function isTicketResolutionOverdue(ticket: TicketResolutionInput, policies: TicketSlaPolicy[], now = Date.now()) {
+  return getTicketResolutionDueLabel(ticket, policies, now).startsWith("Overdue");
+}
+
+function getBusinessDayCountdownLabel(deadline: number, now: number) {
+  if (!Number.isFinite(deadline)) return "SLA target not set";
+  if (now >= deadline) {
+    const overdueDays = businessDaysBetween(deadline, now);
+    return overdueDays > 0 ? `Overdue by ${overdueDays} business ${overdueDays === 1 ? "day" : "days"}` : "Overdue";
+  }
+  const remainingDays = businessDaysBetween(now, deadline);
+  return remainingDays === 0
+    ? "Due today"
+    : `Due in ${remainingDays} business ${remainingDays === 1 ? "day" : "days"}`;
 }
 
 export function calculateTicketPriority(impact: TicketImpact, urgency: TicketUrgency): Priority {

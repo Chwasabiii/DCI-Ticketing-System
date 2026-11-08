@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { AlertCircle, ArrowUpRight, ChevronLeft, ChevronRight, LockKeyhole, Ticket as TicketIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { Ticket } from "@/lib/types";
-import { formatDate, getCcgDeadlineIndicators, getTicketSlaIndicators, isTicketOverdue, needsTicketPriorityReview } from "@/lib/utils";
+import { formatDate, getCcgDeadlineIndicators, getTicketResolutionDueLabel, getTicketSlaIndicators, needsTicketPriorityReview } from "@/lib/utils";
 import { TicketQueueActions } from "@/components/tickets/ticket-queue-actions";
 import type { Profile, TicketSlaPolicy } from "@/lib/types";
 
@@ -130,17 +130,11 @@ export function TicketTable({
                     <span className="capitalize">{ticket.ccg_request_scope ? ticket.ccg_request_scope.replaceAll("_", " ") : serviceCategoryLabel(ticket.service_category)}</span>
                     <span aria-hidden="true">·</span>
                     <span>Opened {formatDate(ticket.created_at)}</span>
-                    {ticket.due_date && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="inline-flex items-center gap-1">
-                          {isTicketOverdue(ticket) && (
-                              <AlertCircle className="h-3 w-3 text-urgent" />
-                            )}
-                          {isTicketOverdue(ticket) ? "Overdue · " : "Due "}{formatDate(ticket.due_date)}
-                        </span>
-                      </>
-                    )}
+                    <span aria-hidden="true">·</span>
+                    <span className="inline-flex items-center gap-1">
+                      {getTicketResolutionDueLabel(ticket, slaPolicies).startsWith("Overdue") && <AlertCircle className="h-3 w-3 text-urgent" />}
+                      {getTicketResolutionDueLabel(ticket, slaPolicies)}
+                    </span>
                   </span>
                   {nextActions[String(ticket.id)] && (
                     <span className="mt-2 inline-flex rounded-md bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-800">
