@@ -90,7 +90,7 @@ In Next.js, a `page.tsx` file defines a page. For example, `src/app/(app)/ticket
 | `/login` | Sign in to the application. |
 | `/dashboard` | Ticket summary and recent requests. |
 | `/tickets` | Browse tickets available to the signed-in user. |
-| `/tickets/new` | Submit a support request. |
+| `/tickets/new` | Choose IT Support or Cost Control Group, then submit a team-specific request. |
 | `/tickets/[id]` | View a ticket, comments, and available actions. |
 | `/inbox` | Staff triage inbox for unassigned, assigned-to-me, and overdue tickets. |
 | `/queue` | Focused incoming-ticket queue. |

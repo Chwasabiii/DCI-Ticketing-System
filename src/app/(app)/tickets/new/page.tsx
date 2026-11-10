@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, CheckCircle2, CircleHelp, TicketPlus } from "lucide-react";
+import { ArrowRight, Calculator, CheckCircle2, CircleHelp, TicketPlus } from "lucide-react";
 import { TicketForm } from "@/components/tickets/ticket-form";
 import { getCurrentContext } from "@/lib/data";
 
@@ -10,7 +10,37 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
   if (profile.user_side !== "client") redirect("/dashboard");
 
   const { team } = await searchParams;
-  const teamSlug = team === "cost-control" ? team : "it-support";
+  const teamSlug = team === "cost-control" || team === "it-support" ? team : null;
+  if (!teamSlug) {
+    return (
+      <div className="mx-auto max-w-[1100px] space-y-6">
+        <header className="rounded-2xl bg-gradient-to-r from-[#172b4d] to-[#294c81] px-6 py-6 text-white shadow-[0_14px_36px_rgba(18,33,58,0.15)] sm:px-8">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.15em] text-blue-100">
+            <TicketPlus className="h-4 w-4" />
+            PMSG Support
+          </div>
+          <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Choose a service team</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-blue-100/90 sm:text-base">
+            Select the team that should receive your request. CCG requests go directly to the Cost Control Group.
+          </p>
+        </header>
+        <section aria-label="Choose a service team" className="grid gap-4 md:grid-cols-2">
+          <Link href="/tickets/new?team=it-support" className="group rounded-2xl border border-blue-100 bg-white p-6 shadow-soft transition hover:border-blue-300 hover:shadow-lg">
+            <span className="grid h-11 w-11 place-items-center rounded-xl bg-blue-50 text-accent"><TicketPlus className="h-5 w-5" /></span>
+            <h2 className="mt-4 text-lg font-bold text-navy">IT Support Department</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Get help with accounts, devices, software, access, or technical incidents.</p>
+            <span className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-accent">Create an IT request <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+          </Link>
+          <Link href="/tickets/new?team=cost-control" className="group rounded-2xl border border-emerald-100 bg-white p-6 shadow-soft transition hover:border-emerald-300 hover:shadow-lg">
+            <span className="grid h-11 w-11 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><Calculator className="h-5 w-5" /></span>
+            <h2 className="mt-4 text-lg font-bold text-navy">Cost Control Group</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Request unit rates, vendor lists, or TOR and contract references from CCG.</p>
+            <span className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-emerald-700">Create a CCG request <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+          </Link>
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
       <header className="rounded-2xl bg-gradient-to-r from-[#172b4d] to-[#294c81] px-6 py-6 text-white shadow-[0_14px_36px_rgba(18,33,58,0.15)] sm:px-8">
