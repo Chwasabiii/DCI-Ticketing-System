@@ -2,6 +2,8 @@ import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import type { Priority, Ticket, TicketImpact, TicketSlaPolicy, TicketUrgency } from "@/lib/types";
 
+const appTimeZone = "Asia/Manila";
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -13,6 +15,7 @@ export function formatDate(value?: string | null) {
     ? new Date(`${value}T12:00:00`)
     : new Date(value);
   return new Intl.DateTimeFormat("en", {
+    timeZone: appTimeZone,
     month: "short",
     day: "numeric",
     year: "numeric"
@@ -174,11 +177,13 @@ export function formatDateTime(value?: string | null) {
   if (Number.isNaN(date.getTime())) return "Not set";
 
   return new Intl.DateTimeFormat("en", {
+    timeZone: appTimeZone,
     month: "short",
     day: "numeric",
     year: "numeric",
     hour: "numeric",
-    minute: "2-digit"
+    minute: "2-digit",
+    timeZoneName: "short"
   }).format(date);
 }
 

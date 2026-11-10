@@ -4,18 +4,16 @@ import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
-  BadgeHelp,
   CheckCircle2,
   Clock3,
-  Plus,
   Ticket,
-  Timer
 } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { TicketReports } from "@/components/reports/ticket-reports";
 import { CostControlDashboard } from "@/components/tickets/cost-control-dashboard";
 import { getDashboardTickets, getCurrentContext, getTicketSlaPolicies } from "@/lib/data";
 import { isTicketResolutionOverdue } from "@/lib/utils";
+import { EndUserDashboard } from "@/components/dashboard/end-user-dashboard";
 
 function StatCard({
   label,
@@ -55,7 +53,30 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  const [{ profile, roleNames }, slaPolicies] = await Promise.all([getCurrentContext(), getTicketSlaPolicies()]);
+  const { profile, roleNames } = await getCurrentContext();
+  if (profile?.user_side === "client") {
+    let tickets;
+    let slaPolicies;
+    let loadError: string | null = null;
+    try {
+      [tickets, slaPolicies] = await Promise.all([
+        getDashboardTickets(),
+        getTicketSlaPolicies()
+      ]);
+    } catch (error) {
+      loadError = error instanceof Error ? error.message : "An unexpected error occurred.";
+    }
+    return (
+      <EndUserDashboard
+        name={profile.full_name}
+        tickets={tickets}
+        slaPolicies={slaPolicies}
+        loadError={loadError}
+      />
+    );
+  }
+
+  const slaPolicies = await getTicketSlaPolicies();
   const tickets = await getDashboardTickets(
     profile?.user_side === "employee" ? profile.service_team_id ?? -1 : undefined
   );
@@ -65,8 +86,6 @@ export default async function DashboardPage() {
   }
 
   const visibleTickets = tickets;
-  const isEndUser = profile?.user_side === "client";
-
   const active = visibleTickets.filter(
     (ticket) => !["resolved", "closed", "rejected"].includes(ticket.status)
   );
@@ -75,10 +94,7 @@ export default async function DashboardPage() {
     (ticket) => ticket.status === "resolved" || ticket.status === "closed"
   ).length;
   const overdue = active.filter((ticket) => isTicketResolutionOverdue(ticket, slaPolicies)).length;
-  const roleLabel =
-    profile?.user_side === "client"
-      ? "Your support workspace"
-      : roleNames.join(" · ") || profile?.user_side || "Support workspace";
+  const roleLabel = roleNames.join(" · ") || profile?.user_side || "Support workspace";
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-7">
@@ -111,15 +127,6 @@ export default async function DashboardPage() {
                 KPI score
               </Link>
             )}
-            {isEndUser && (
-              <Link
-                href="/tickets/new"
-                className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-bold text-navy shadow-sm transition-colors hover:bg-blue-50"
-              >
-                <Plus className="h-4 w-4" />
-                Open a ticket
-              </Link>
-            )}
             <Link
               href="/tickets"
               className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 text-sm font-semibold text-white transition-colors hover:bg-white/10"
@@ -130,17 +137,6 @@ export default async function DashboardPage() {
           </div>
         </div>
       </section>
-
-      {profile?.user_side === "client" && (
-        <section aria-label="Choose a service team" className="grid gap-4 lg:grid-cols-2">
-          <Link href="/it-support" className="group flex items-center justify-between gap-4 rounded-2xl border border-blue-100 bg-white p-5 shadow-soft transition hover:border-blue-300 hover:shadow-lg sm:p-6">
-            <span className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-accent"><Ticket className="h-5 w-5" /></span><span><span className="block text-lg font-bold text-navy">IT Support Department</span><span className="mt-1 block text-sm text-slate-500">Get help with systems, devices, accounts, and access.</span></span></span><ArrowRight className="h-5 w-5 shrink-0 text-accent transition-transform group-hover:translate-x-1" />
-          </Link>
-          <Link href="/cost-control" className="group flex items-center justify-between gap-4 rounded-2xl border border-emerald-100 bg-white p-5 shadow-soft transition hover:border-emerald-300 hover:shadow-lg sm:p-6">
-            <span className="flex items-center gap-4"><span className="grid h-12 w-12 place-items-center rounded-xl bg-emerald-50 text-emerald-700"><Ticket className="h-5 w-5" /></span><span><span className="block text-lg font-bold text-navy">Cost Control Group</span><span className="mt-1 block text-sm text-slate-500">Open the dedicated CCG service tab.</span></span></span><ArrowRight className="h-5 w-5 shrink-0 text-emerald-700 transition-transform group-hover:translate-x-1" />
-          </Link>
-        </section>
-      )}
 
       <section aria-label="Ticket overview" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -171,7 +167,7 @@ export default async function DashboardPage() {
           label="Overdue"
           value={overdue}
           detail="Past their due date"
-          href={profile?.user_side === "client" ? "/tickets" : "/inbox?view=overdue"}
+          href="/inbox?view=overdue"
           icon={Clock3}
           tone="bg-amber-50 text-warning"
         />
@@ -183,7 +179,7 @@ export default async function DashboardPage() {
         slaPolicies={slaPolicies}
       />
 
-      <section className={`grid items-start gap-6 ${isEndUser || urgent > 0 ? "xl:grid-cols-[minmax(0,1fr)_300px]" : "xl:grid-cols-1"}`}>
+      <section className={`grid items-start gap-6 ${urgent > 0 ? "xl:grid-cols-[minmax(0,1fr)_300px]" : "xl:grid-cols-1"}`}>
         <div className="min-w-0">
           <div className="mb-4 flex items-end justify-between gap-3">
             <div>
@@ -198,49 +194,6 @@ export default async function DashboardPage() {
         </div>
 
         <aside className="space-y-4">
-          {isEndUser && (
-            <>
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
-            <div className="flex items-center gap-3">
-              <span className="grid h-10 w-10 place-items-center rounded-xl bg-violet-50 text-violet-700">
-                <Timer className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="font-bold text-navy">Need help?</h2>
-                <p className="text-xs text-slate-500">We’re here to keep work moving.</p>
-              </div>
-            </div>
-            <p className="mt-4 text-sm leading-6 text-slate-600">
-              Open a support request, report an incident, or ask for access.
-            </p>
-            <Link
-              href="/tickets/new"
-              className="mt-4 flex min-h-10 items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-white hover:bg-blue-700"
-            >
-              Start a request <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
-
-          <Link
-            href="/faqs"
-            className="group flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-5 transition-colors hover:bg-blue-50"
-          >
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white text-accent shadow-sm">
-              <BadgeHelp className="h-5 w-5" />
-            </span>
-            <span>
-              <span className="block font-bold text-navy">Explore the help center</span>
-              <span className="mt-1 block text-sm leading-5 text-slate-600">
-                Find quick answers to common questions.
-              </span>
-              <span className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-accent">
-                Browse FAQs <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-              </span>
-            </span>
-          </Link>
-            </>
-          )}
-
           {urgent > 0 && (
             <div className="flex gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-urgent" />

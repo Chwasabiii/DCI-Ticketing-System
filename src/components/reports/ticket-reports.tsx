@@ -2,6 +2,12 @@ import type { Ticket, TicketSlaPolicy } from "@/lib/types";
 import { isTicketResolutionOverdue } from "@/lib/utils";
 import { TicketReportExportButton } from "@/components/reports/ticket-report-export-button";
 
+function elapsedHours(start?: string | null, end?: string | null) {
+  if (!start || !end) return null;
+  const hours = (Date.parse(end) - Date.parse(start)) / 3_600_000;
+  return Number.isFinite(hours) && hours >= 0 ? hours : null;
+}
+
 function Distribution({ title, values }: { title: string; values: Array<[string, number]> }) {
   const max = Math.max(1, ...values.map(([, count]) => count));
   return (
@@ -32,7 +38,7 @@ export function TicketReports({
   exportHref = "/api/ticket-report.csv",
   slaPolicies = []
 }: {
-  tickets: Array<Pick<Ticket, "status" | "priority" | "created_at" | "reopened_at" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">>;
+  tickets: Array<Pick<Ticket, "status" | "priority" | "created_at" | "first_response_at" | "reopened_at" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">>;
   canExport: boolean;
   exportHref?: string;
   slaPolicies?: TicketSlaPolicy[];
@@ -46,6 +52,14 @@ export function TicketReports({
   const avgDays = resolvedDurations.length
     ? resolvedDurations.reduce((sum, days) => sum + days, 0) / resolvedDurations.length
     : null;
+  const responseDurations = tickets.flatMap((ticket) => {
+    const hours = elapsedHours(ticket.created_at, ticket.first_response_at);
+    return hours === null ? [] : [hours];
+  });
+  const avgResponseHours = responseDurations.length
+    ? responseDurations.reduce((sum, hours) => sum + hours, 0) / responseDurations.length
+    : null;
+  const reopenedCount = tickets.filter((ticket) => ticket.reopened_at).length;
   const openCount = tickets.filter((ticket) => !["resolved", "closed", "rejected"].includes(ticket.status)).length;
   const overdueCount = tickets.filter((ticket) => isTicketResolutionOverdue(ticket, slaPolicies)).length;
   const sortedStatuses = [...statuses.entries()].sort((a, b) => b[1] - a[1]);
@@ -60,10 +74,12 @@ export function TicketReports({
         </div>
         {canExport && <TicketReportExportButton href={exportHref} />}
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Open tickets</p><p className="mt-2 text-3xl font-bold text-navy">{openCount}</p></div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Overdue tickets</p><p className="mt-2 text-3xl font-bold text-urgent">{overdueCount}</p></div>
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Average resolution</p><p className="mt-2 text-3xl font-bold text-navy">{avgDays === null ? "—" : `${avgDays.toFixed(1)} days`}</p><p className="mt-1 text-xs text-slate-500">{resolvedDurations.length} resolved tickets with timestamps</p></div>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Average first response</p><p className="mt-2 text-3xl font-bold text-navy">{avgResponseHours === null ? "—" : `${avgResponseHours.toFixed(1)} hrs`}</p><p className="mt-1 text-xs text-slate-500">{responseDurations.length} tickets · elapsed time from submission</p></div>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Average resolution</p><p className="mt-2 text-3xl font-bold text-navy">{avgDays === null ? "—" : `${avgDays.toFixed(1)} days`}</p><p className="mt-1 text-xs text-slate-500">{resolvedDurations.length} resolved tickets · calendar days</p></div>
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Reopened tickets</p><p className="mt-2 text-3xl font-bold text-navy">{reopenedCount}</p><p className="mt-1 text-xs text-slate-500">Tickets with a recorded reopen timestamp</p></div>
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5"><p className="text-sm font-semibold text-slate-500">Total tickets</p><p className="mt-2 text-3xl font-bold text-navy">{tickets.length}</p></div>
       </div>
       <Distribution title="status" values={sortedStatuses} />

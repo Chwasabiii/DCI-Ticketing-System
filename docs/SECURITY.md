@@ -21,4 +21,4 @@
 
 The repository review and npm advisory scan do not prove that the deployed Supabase policies are applied or that production settings are correct. No live database authorization exercise or penetration test has been performed.
 
-`npm audit --omit=dev` reported no production dependency vulnerabilities. The full audit reported five high-severity findings through the development-only `eslint-config-next` → `fast-glob` → `micromatch` → `braces@3.0.3` chain. The current advisory lists no patched `braces` version; `npm audit fix --force` proposes a breaking downgrade of `eslint-config-next`, so it was not applied. Recheck the advisory and dependency tree before releases.
+`npm audit --omit=dev` reports no production dependency vulnerabilities. The full audit currently reports eight moderate-severity findings in the development-only `eslint-config-next` → `typescript-eslint` → `minimatch` chain. `npm audit fix --force` proposes a breaking downgrade of `eslint-config-next`, so it was not applied. Recheck advisories and the dependency tree before releases.

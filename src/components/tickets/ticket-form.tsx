@@ -16,7 +16,7 @@ import {
   uploadTicketAttachments
 } from "@/lib/attachments";
 import type { RequestType, ServiceCategory, SimilarTicket, TicketImpact, TicketUrgency } from "@/lib/types";
-import { deleteTicketDraft, readTicketDrafts, saveTicketDraft } from "@/lib/ticket-drafts";
+import { deleteTicketDraft, readTicketDrafts, saveTicketDraft, type TicketDraft } from "@/lib/ticket-drafts";
 
 const serviceCategories: Array<{ value: ServiceCategory; label: string }> = [
   { value: "hardware", label: "Hardware" },
@@ -31,6 +31,37 @@ function fileSizeLabel(size: number) {
   return size >= 1024 * 1024
     ? `${(size / (1024 * 1024)).toFixed(1)} MB`
     : `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
+function draftHasContent(draft: TicketDraft) {
+  return Boolean(
+    draft.title.trim()
+    || draft.description.trim()
+    || draft.requestType !== "service_request"
+    || (draft.teamSlug !== "cost-control" && draft.serviceCategory !== "hardware")
+    || draft.impact !== "medium"
+    || draft.urgency !== "medium"
+    || (draft.teamSlug === "cost-control" && (
+      (draft.ccgRequestTypes ?? [draft.ccgRequestType ?? "unit_rate"]).join(",") !== "unit_rate"
+      || (draft.ccgRequestScope ?? "whole_boq") !== "whole_boq"
+    ))
+  );
+}
+
+function draftContentKey(draft: TicketDraft | null) {
+  if (!draft) return "";
+  return JSON.stringify({
+    title: draft.title,
+    description: draft.description,
+    requestType: draft.requestType,
+    serviceCategory: draft.serviceCategory,
+    impact: draft.impact,
+    urgency: draft.urgency,
+    teamSlug: draft.teamSlug,
+    ccgRequestType: draft.ccgRequestType,
+    ccgRequestTypes: draft.ccgRequestTypes,
+    ccgRequestScope: draft.ccgRequestScope
+  });
 }
 
 export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
@@ -59,47 +90,277 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
   const [draftId, setDraftId] = useState("");
   const [draftReady, setDraftReady] = useState(false);
   const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [leavePrompt, setLeavePrompt] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const lastSavedDraftRef = useRef<TicketDraft | null>(null);
+  const currentDraftRef = useRef<TicketDraft | null>(null);
+  const hasUnsavedChangesRef = useRef(false);
+  const historyGuardActiveRef = useRef(false);
+  const bypassHistoryGuardRef = useRef(false);
+  const pendingNavigationRef = useRef<(() => void) | null>(null);
+  const leavePromptRef = useRef(false);
   const priority = calculateTicketPriority(impact, urgency);
 
-  useEffect(() => {
-    const requestedId = new URLSearchParams(window.location.search).get("draft");
-    const drafts = readTicketDrafts();
-    const draft = requestedId ? drafts.find((item) => item.id === requestedId) : undefined;
-    const id = draft?.id ?? crypto.randomUUID();
-    setDraftId(id);
-    if (draft) {
-      setTitleText(draft.title);
-      setDescriptionText(draft.description);
-      setRequestType(draft.requestType as RequestType);
-      setServiceCategory(draft.serviceCategory as ServiceCategory);
-      const savedCcgTypes = draft.ccgRequestTypes?.length ? draft.ccgRequestTypes : [draft.ccgRequestType ?? "unit_rate"];
-      setCcgRequestTypes(savedCcgTypes);
-      setCcgRequestType(savedCcgTypes[0]);
-      setCcgRequestScope(draft.ccgRequestScope ?? "whole_boq");
-      setImpact(draft.impact as TicketImpact);
-      setUrgency(draft.urgency as TicketUrgency);
-    }
-    setDraftReady(true);
-  }, []);
+  const currentDraft: TicketDraft = {
+    id: draftId,
+    title: titleText,
+    description: descriptionText,
+    requestType,
+    serviceCategory,
+    impact,
+    urgency,
+    teamSlug,
+    ccgRequestType,
+    ccgRequestTypes,
+    ccgRequestScope,
+    updatedAt: new Date().toISOString()
+  };
+  const hasUnsavedChanges = draftReady
+    && !createdTicketId
+    && draftHasContent(currentDraft)
+    && draftContentKey(currentDraft) !== draftContentKey(lastSavedDraftRef.current);
+  currentDraftRef.current = draftId ? currentDraft : null;
+  hasUnsavedChangesRef.current = hasUnsavedChanges;
+  leavePromptRef.current = leavePrompt;
 
   useEffect(() => {
-    if (!draftReady || createdTicketId) return;
     const timer = window.setTimeout(() => {
-      saveTicketDraft({
-      id: draftId, title: titleText, description: descriptionText, requestType,
-      serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestTypes, ccgRequestScope, updatedAt: new Date().toISOString()
-      });
-      setDraftSavedAt(new Date().toISOString());
-    }, 250);
+      const requestedId = new URLSearchParams(window.location.search).get("draft");
+      const drafts = readTicketDrafts();
+      const draft = (requestedId ? drafts.find((item) => item.id === requestedId && item.teamSlug === teamSlug) : undefined)
+        ?? drafts.find((item) => item.teamSlug === teamSlug);
+      const id = draft?.id ?? crypto.randomUUID();
+      setDraftId(id);
+      if (draft) {
+        // Restore first; autosave stays disabled until hydration completes.
+        lastSavedDraftRef.current = draft;
+        setTitleText(draft.title);
+        setDescriptionText(draft.description);
+        setRequestType(draft.requestType as RequestType);
+        setServiceCategory(draft.serviceCategory as ServiceCategory);
+        const savedCcgTypes = draft.ccgRequestTypes?.length ? draft.ccgRequestTypes : [draft.ccgRequestType ?? "unit_rate"];
+        setCcgRequestTypes(savedCcgTypes);
+        setCcgRequestType(savedCcgTypes[0]);
+        setCcgRequestScope(draft.ccgRequestScope ?? "whole_boq");
+        setImpact(draft.impact as TicketImpact);
+        setUrgency(draft.urgency as TicketUrgency);
+        setDraftSavedAt(draft.updatedAt);
+      }
+      setDraftReady(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [teamSlug]);
+
+  useEffect(() => {
+    if (!draftReady || createdTicketId || !draftId) return;
+    const timer = window.setTimeout(() => {
+      const draftToSave: TicketDraft = {
+        id: draftId,
+        title: titleText,
+        description: descriptionText,
+        requestType,
+        serviceCategory,
+        impact,
+        urgency,
+        teamSlug,
+        ccgRequestType,
+        ccgRequestTypes,
+        ccgRequestScope,
+        updatedAt: new Date().toISOString()
+      };
+      const isMeaningful = draftHasContent(draftToSave);
+      if (isMeaningful && draftContentKey(draftToSave) === draftContentKey(lastSavedDraftRef.current)) return;
+      if (!isMeaningful) {
+        if (lastSavedDraftRef.current) {
+          if (!deleteTicketDraft(draftId)) {
+            setDraftError("Could not remove the empty draft from this device.");
+            return;
+          }
+          lastSavedDraftRef.current = null;
+          setDraftSavedAt(null);
+        }
+        return;
+      }
+      const saved = saveTicketDraft(draftToSave);
+      if (!saved) {
+        setDraftError("Could not save your draft on this device. Check available browser storage.");
+        return;
+      }
+      lastSavedDraftRef.current = saved;
+      setDraftSavedAt(saved.updatedAt);
+      setDraftError(null);
+    }, 650);
     return () => window.clearTimeout(timer);
   }, [draftReady, draftId, titleText, descriptionText, requestType, serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestTypes, ccgRequestScope, createdTicketId]);
 
-  function saveDraftNow() {
-    if (!draftReady || !draftId) return;
-    const updatedAt = new Date().toISOString();
-    saveTicketDraft({ id: draftId, title: titleText, description: descriptionText, requestType, serviceCategory, impact, urgency, teamSlug, ccgRequestType, ccgRequestTypes, ccgRequestScope, updatedAt });
-    setDraftSavedAt(updatedAt);
+  function saveDraftNow(draft = currentDraftRef.current) {
+    if (!draftReady || !draft) return false;
+    if (!draftHasContent(draft)) {
+      setDraftError("Add ticket details before saving a draft.");
+      return false;
+    }
+    const saved = saveTicketDraft(draft);
+    if (!saved) {
+      setDraftError("Could not save your draft on this device. Check available browser storage.");
+      return false;
+    }
+    lastSavedDraftRef.current = saved;
+    setDraftSavedAt(saved.updatedAt);
+    setDraftError(null);
+    return true;
   }
+
+  function releaseHistoryGuardAndNavigate(navigate: () => void) {
+    if (!historyGuardActiveRef.current) {
+      navigate();
+      return;
+    }
+    historyGuardActiveRef.current = false;
+    bypassHistoryGuardRef.current = true;
+    pendingNavigationRef.current = navigate;
+    window.history.back();
+  }
+
+  function navigateAfterPrompt() {
+    const navigate = pendingNavigationRef.current;
+    pendingNavigationRef.current = null;
+    setLeavePrompt(false);
+    navigate?.();
+  }
+
+  function discardDraftAndLeave() {
+    if (draftId && !deleteTicketDraft(draftId)) {
+      setDraftError("Could not discard the draft from this device. Please try again.");
+      return;
+    }
+    lastSavedDraftRef.current = null;
+    setDraftSavedAt(null);
+    setDraftError(null);
+    navigateAfterPrompt();
+  }
+
+  useEffect(() => {
+    if (!draftReady || !draftId) return;
+    const onStorage = () => {
+      if (hasUnsavedChangesRef.current) return;
+      const remoteDraft = readTicketDrafts().find((draft) => draft.id === draftId);
+      const currentSaved = lastSavedDraftRef.current;
+      if (remoteDraft && (!currentSaved || Date.parse(remoteDraft.updatedAt) > Date.parse(currentSaved.updatedAt))) {
+        lastSavedDraftRef.current = remoteDraft;
+        setTitleText(remoteDraft.title);
+        setDescriptionText(remoteDraft.description);
+        setRequestType(remoteDraft.requestType as RequestType);
+        setServiceCategory(remoteDraft.serviceCategory as ServiceCategory);
+        const savedCcgTypes = remoteDraft.ccgRequestTypes?.length
+          ? remoteDraft.ccgRequestTypes
+          : [remoteDraft.ccgRequestType ?? "unit_rate"];
+        setCcgRequestTypes(savedCcgTypes);
+        setCcgRequestType(savedCcgTypes[0] ?? "unit_rate");
+        setCcgRequestScope(remoteDraft.ccgRequestScope ?? "whole_boq");
+        setImpact(remoteDraft.impact as TicketImpact);
+        setUrgency(remoteDraft.urgency as TicketUrgency);
+        setDraftSavedAt(remoteDraft.updatedAt);
+      } else if (!remoteDraft && currentSaved) {
+        lastSavedDraftRef.current = null;
+        setDraftId(crypto.randomUUID());
+        setTitleText("");
+        setDescriptionText("");
+        setRequestType("service_request");
+        setServiceCategory("hardware");
+        setCcgRequestTypes(["unit_rate"]);
+        setCcgRequestType("unit_rate");
+        setCcgRequestScope("whole_boq");
+        setImpact("medium");
+        setUrgency("medium");
+        setDraftSavedAt(null);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [draftReady, draftId]);
+
+  // Persist the latest edits synchronously on pagehide; restoration keeps refresh prompt-free.
+  useEffect(() => {
+    if (!draftReady) return;
+    const onPageHide = () => {
+      const draft = currentDraftRef.current;
+      if (!draft || createdTicketId) return;
+      if (draftHasContent(draft)) {
+        if (draftContentKey(draft) !== draftContentKey(lastSavedDraftRef.current)) {
+          saveTicketDraft(draft);
+        }
+      } else if (lastSavedDraftRef.current) {
+        deleteTicketDraft(draft.id);
+      }
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [draftReady, createdTicketId]);
+
+  useEffect(() => {
+    if (!draftReady || !draftId || !hasUnsavedChanges) return;
+    const guardState = { ...(window.history.state ?? {}), __ticketDraftGuard: draftId };
+    window.history.pushState(guardState, "", window.location.href);
+    historyGuardActiveRef.current = true;
+  }, [draftReady, draftId, hasUnsavedChanges]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (bypassHistoryGuardRef.current) {
+        bypassHistoryGuardRef.current = false;
+        const navigate = pendingNavigationRef.current;
+        pendingNavigationRef.current = null;
+        navigate?.();
+        return;
+      }
+      if (!historyGuardActiveRef.current) return;
+      if (!hasUnsavedChangesRef.current) {
+        historyGuardActiveRef.current = false;
+        return;
+      }
+      const guardState = { ...(window.history.state ?? {}), __ticketDraftGuard: draftId };
+      window.history.pushState(guardState, "", window.location.href);
+      historyGuardActiveRef.current = true;
+      if (leavePromptRef.current) return;
+      pendingNavigationRef.current = () => {
+        historyGuardActiveRef.current = false;
+        bypassHistoryGuardRef.current = true;
+        window.history.go(-2);
+      };
+      setLeavePrompt(true);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [draftId]);
+
+  useEffect(() => {
+    if (hasUnsavedChanges || !historyGuardActiveRef.current) return;
+    historyGuardActiveRef.current = false;
+    bypassHistoryGuardRef.current = true;
+    window.history.back();
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    const onDocumentClick = (event: MouseEvent) => {
+      if (!hasUnsavedChangesRef.current || event.defaultPrevented || event.button !== 0
+        || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.target || anchor.hasAttribute("download")) return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (destination.origin !== window.location.origin || destination.href === window.location.href) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const href = `${destination.pathname}${destination.search}${destination.hash}`;
+      pendingNavigationRef.current = () => releaseHistoryGuardAndNavigate(() => router.push(href));
+      setLeavePrompt(true);
+    };
+    document.addEventListener("click", onDocumentClick, true);
+    return () => document.removeEventListener("click", onDocumentClick, true);
+  }, [router]);
 
   useEffect(() => {
     if (titleText.trim().length < 8) {
@@ -153,7 +414,12 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
       }
 
       setCreatedTicketId(result.ticketId);
-      deleteTicketDraft(draftId);
+      const draftDeleted = deleteTicketDraft(draftId);
+      if (!draftDeleted) setDraftError("Ticket created, but its saved draft could not be removed from this device.");
+      else {
+        lastSavedDraftRef.current = null;
+        setDraftSavedAt(null);
+      }
       const uploadResult = await uploadTicketAttachments(
         result.ticketId,
         result.userId,
@@ -171,6 +437,7 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
         return;
       }
 
+      if (!draftDeleted) return;
       router.push(`/tickets/${result.ticketId}`);
     } catch {
       setMessage("Could not submit your ticket. Please try again.");
@@ -496,13 +763,14 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
       </div>
 
       {message && <FeedbackMessage type="error">{message}</FeedbackMessage>}
+      {draftError && <FeedbackMessage type="error">{draftError}</FeedbackMessage>}
       {createdTicketId && (
         <Link href={`/tickets/${createdTicketId}`} className="text-sm font-semibold text-accent">
           Open created ticket
         </Link>
       )}
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
-        <Button type="button" variant="secondary" disabled={!draftReady || Boolean(createdTicketId)} onClick={saveDraftNow} className="sm:w-fit">
+        <Button type="button" variant="secondary" disabled={!draftReady || Boolean(createdTicketId)} onClick={() => saveDraftNow()} className="sm:w-fit">
           <span>Save draft</span>
         </Button>
         {draftSavedAt && <span role="status" className="text-xs text-slate-500">Draft saved at {new Date(draftSavedAt).toLocaleTimeString()} on this device.</span>}
@@ -517,6 +785,17 @@ export function TicketForm({ teamSlug = "it-support" }: { teamSlug?: string }) {
           Cancel
         </Link>
       </div>
+      {leavePrompt && <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-4">
+        <section role="alertdialog" aria-modal="true" aria-labelledby="draft-leave-title" aria-describedby="draft-leave-description" className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-2xl sm:p-6">
+          <h2 id="draft-leave-title" className="text-base font-bold text-navy">Do you want to save this draft?</h2>
+          <p id="draft-leave-description" className="mt-2 text-sm leading-6 text-slate-600">Save your changes to continue them later, or discard them before leaving.</p>
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" onClick={() => { pendingNavigationRef.current = null; setLeavePrompt(false); }} className="min-h-10 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+            <button type="button" onClick={discardDraftAndLeave} className="min-h-10 rounded-xl border border-red-200 px-4 text-sm font-semibold text-red-700 hover:bg-red-50">Discard</button>
+            <button type="button" onClick={() => { if (saveDraftNow()) navigateAfterPrompt(); }} className="min-h-10 rounded-xl bg-navy px-4 text-sm font-semibold text-white hover:bg-slate-800">Save draft</button>
+          </div>
+        </section>
+      </div>}
     </form>
   );
 }

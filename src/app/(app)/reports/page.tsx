@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { TicketReports } from "@/components/reports/ticket-reports";
 import { TicketTable } from "@/components/tickets/ticket-table";
-import { getCurrentContext, getReportSummaryTickets, getReportTickets, getTicketSlaPolicies } from "@/lib/data";
+import { getCurrentContext, getReportSummaryTickets, getReportTickets, getServiceTeams, getTicketSlaPolicies } from "@/lib/data";
 import type { TicketStatus } from "@/lib/types";
 
 const statuses: TicketStatus[] = ["open", "under_review", "assigned", "in_progress", "waiting_for_info", "resolved", "closed", "rejected"];
@@ -24,22 +24,30 @@ export default async function ReportsPage({
   const statusValue = typeof params.status === "string" && statuses.includes(params.status as TicketStatus)
     ? params.status
     : undefined;
+  const requestedTeamId = typeof params.team === "string" && /^\d+$/.test(params.team)
+    ? Number(params.team)
+    : undefined;
+  const serviceTeamId = requestedTeamId !== undefined && Number.isSafeInteger(requestedTeamId) && requestedTeamId > 0
+    ? requestedTeamId
+    : undefined;
   const requestedPage = typeof params.page === "string" ? Number(params.page) : 1;
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const [{ profile }, reportPage, summaryTickets, slaPolicies] = await Promise.all([
+  const [{ profile }, reportPage, summaryTickets, slaPolicies, serviceTeams] = await Promise.all([
     getCurrentContext(),
-    getReportTickets({ startDate: startValue, endDate: endValue, status: statusValue, page, pageSize }),
-    getReportSummaryTickets({ startDate: startValue, endDate: endValue, status: statusValue }),
-    getTicketSlaPolicies()
+    getReportTickets({ startDate: startValue, endDate: endValue, status: statusValue, serviceTeamId, page, pageSize }),
+    getReportSummaryTickets({ startDate: startValue, endDate: endValue, status: statusValue, serviceTeamId }),
+    getTicketSlaPolicies(),
+    getServiceTeams({ inScopeOnly: true })
   ]);
   const totalPages = Math.max(1, Math.ceil(reportPage.totalCount / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const visibleTickets = currentPage === page ? reportPage.tickets : (await getReportTickets({ startDate: startValue, endDate: endValue, status: statusValue, page: currentPage, pageSize })).tickets;
+  const visibleTickets = currentPage === page ? reportPage.tickets : (await getReportTickets({ startDate: startValue, endDate: endValue, status: statusValue, serviceTeamId, page: currentPage, pageSize })).tickets;
   const makePageUrl = (nextPage: number) => {
     const next = new URLSearchParams();
     if (startValue) next.set("start", startValue);
     if (endValue) next.set("end", endValue);
     if (statusValue) next.set("status", statusValue);
+    if (serviceTeamId !== undefined) next.set("team", String(serviceTeamId));
     next.set("page", String(nextPage));
     return `/reports?${next.toString()}`;
   };
@@ -47,6 +55,7 @@ export default async function ReportsPage({
   if (startValue) exportParams.set("start", startValue);
   if (endValue) exportParams.set("end", endValue);
   if (statusValue) exportParams.set("status", statusValue);
+  if (serviceTeamId !== undefined) exportParams.set("team", String(serviceTeamId));
   const exportHref = `/api/ticket-report.csv${exportParams.size ? `?${exportParams.toString()}` : ""}`;
 
   return (
@@ -54,13 +63,14 @@ export default async function ReportsPage({
       <header>
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-accent">Analytics</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-navy">Ticket reports</h1>
-        <p className="mt-2 text-sm text-slate-600">Filter tickets by submission date and status. Results follow your account’s ticket access.</p>
+        <p className="mt-2 text-sm text-slate-600">Filter tickets by submission date, service team, and status. Results follow your account’s ticket access.</p>
       </header>
 
-      <form method="get" className="grid gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto_auto] lg:items-end">
+      <form method="get" className="grid gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto_auto] lg:items-end">
         <label className="grid gap-1.5 text-xs font-semibold text-slate-600">Submitted from<input type="date" name="start" defaultValue={startValue} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-normal text-slate-800 focus-ring" /></label>
         <label className="grid gap-1.5 text-xs font-semibold text-slate-600">Submitted through<input type="date" name="end" defaultValue={endValue} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-normal text-slate-800 focus-ring" /></label>
         <label className="grid gap-1.5 text-xs font-semibold text-slate-600">Status<select name="status" defaultValue={statusValue ?? "all"} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-normal text-slate-800 focus-ring"><option value="all">All statuses</option>{statuses.map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
+        <label className="grid gap-1.5 text-xs font-semibold text-slate-600">Service team<select name="team" defaultValue={serviceTeamId === undefined ? "all" : String(serviceTeamId)} className="min-h-10 rounded-lg border border-slate-200 px-3 text-sm font-normal text-slate-800 focus-ring"><option value="all">All teams</option>{serviceTeams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label>
         <button className="focus-ring min-h-10 rounded-xl bg-accent px-4 text-sm font-semibold text-white hover:bg-blue-700" type="submit">Apply filters</button>
         <Link href="/reports" className="focus-ring inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Clear</Link>
       </form>

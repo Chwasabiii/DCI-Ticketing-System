@@ -30,7 +30,7 @@ export default async function SettingsPage() {
         </div>
       </header>
 
-      <section aria-label="Account overview" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {profile?.user_side !== "client" && <section aria-label="Account overview" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Account type", value: accountType, icon: CircleUserRound },
           { label: "Service team", value: profile?.service_team?.name ?? "Not assigned", icon: Building2 },
@@ -40,7 +40,7 @@ export default async function SettingsPage() {
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-50 text-slate-500"><Icon className="h-[18px] w-[18px]" /></span>
           <span className="min-w-0"><span className="block text-xs font-medium text-slate-500">{label}</span><span className="mt-0.5 block truncate text-sm font-bold capitalize text-navy">{value}</span></span>
         </div>)}
-      </section>
+      </section>}
 
       {profile && <ProfileSecurityForm fullName={profile.full_name ?? ""} nameChangeUsed={profile.full_name_change_used ?? false} />}
       <NotificationPreferences initial={preferences} />

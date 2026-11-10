@@ -182,6 +182,7 @@ export default async function TicketDetailPage({
       </Link>
       <div className={`grid items-start gap-6 ${showHandoff ? "xl:grid-cols-[minmax(0,1fr)_360px]" : "grid-cols-1"}`}>
       <section className="space-y-5">
+        {isCcgTicket && <CcgTicketStatusBar ticket={ticket} />}
         <div className={`grid items-stretch gap-5 ${canViewTicketActions || canUseQuickActions ? "xl:grid-cols-[minmax(0,1fr)_340px]" : "grid-cols-1"}`}>
         <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(20,40,75,0.06)]">
           <div className="h-1.5 bg-gradient-to-r from-accent via-blue-400 to-indigo-300" />
@@ -225,7 +226,6 @@ export default async function TicketDetailPage({
               </div>
             ))}
           </dl>
-          {isCcgTicket && <CcgTicketStatusBar ticket={ticket} />}
           {ticket.ccg_request_type && (
             <section className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 sm:p-5">
               <h2 className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-800">CCG request workflow</h2>

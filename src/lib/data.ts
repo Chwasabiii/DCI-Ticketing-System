@@ -113,7 +113,7 @@ const queueTicketSelection = "id, ticket_no, title, status, priority, reported_i
 const dashboardTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, is_confidential, request_type, service_category, ccg_request_type, ccg_stage_due_at, due_date, created_at, reopened_at, resolved_at, service_team_id";
 
 const performanceTicketSelection = "status, priority, assigned_to, first_response_at, resolved_at, created_at, reopened_at, due_date, ccg_request_type, ccg_stage_due_at, ccg_vendor_due_at, ccg_vendor_expected_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds";
-const reportSummarySelection = "status, priority, created_at, reopened_at, resolved_at, ccg_request_type, ccg_stage_due_at";
+const reportSummarySelection = "status, priority, created_at, first_response_at, reopened_at, resolved_at, service_team_id, ccg_request_type, ccg_stage_due_at";
 
 export async function getServiceTeams({ inScopeOnly = false }: { inScopeOnly?: boolean } = {}): Promise<ServiceTeam[]> {
   const supabase = await createClient();
@@ -171,8 +171,47 @@ export async function getTeamTickets(serviceTeamId: number) {
   return getPagedTickets(queueTicketSelection, serviceTeamId);
 }
 
-export async function getInboxTickets(serviceTeamId?: number) {
-  return getPagedTickets(queueTicketSelection, serviceTeamId);
+export async function getInboxTickets({
+  serviceTeamId,
+  view = "all",
+  status,
+  priority,
+  needsPriorityReview = false,
+  search = "",
+  page = 1,
+  pageSize = 25
+}: {
+  serviceTeamId?: number;
+  view?: "all" | "unassigned" | "mine" | "overdue" | "resolved";
+  status?: string;
+  priority?: string;
+  needsPriorityReview?: boolean;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const supabase = await createClient();
+  const from = (page - 1) * pageSize;
+  const { data, error, count } = await supabase
+    .rpc("search_ticket_inbox", {
+      p_service_team_id: serviceTeamId ?? null,
+      p_view: view,
+      p_status: status ?? null,
+      p_priority: priority ?? null,
+      p_needs_priority_review: needsPriorityReview,
+      p_search: search.slice(0, 100)
+    }, { count: "exact" })
+    .select(queueTicketSelection)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(from, from + pageSize - 1)
+    .returns<Ticket[]>();
+  if (error) throw new Error(`Could not load triage inbox: ${error.message}`);
+  if (!Array.isArray(data)) throw new Error("Could not load triage inbox: the database returned an invalid result.");
+  const tickets = data.filter((ticket): ticket is Ticket =>
+    typeof ticket === "object" && ticket !== null && "id" in ticket && "title" in ticket
+  );
+  return { tickets, totalCount: count ?? 0 };
 }
 
 export async function getPerformanceTickets(serviceTeamId: number, createdAfter: string) {
@@ -183,12 +222,14 @@ export async function getReportTickets({
   startDate,
   endDate,
   status,
+  serviceTeamId,
   page = 1,
   pageSize = 25
 }: {
   startDate?: string;
   endDate?: string;
   status?: string;
+  serviceTeamId?: number;
   page?: number;
   pageSize?: number;
 }) {
@@ -203,6 +244,7 @@ export async function getReportTickets({
     query = query.lt("created_at", dayAfter.toISOString());
   }
   if (status) query = query.eq("status", status);
+  if (serviceTeamId !== undefined) query = query.eq("service_team_id", serviceTeamId);
   const from = (page - 1) * pageSize;
   const { data, error, count } = await query.range(from, from + pageSize - 1).returns<Ticket[]>();
   if (error) throw new Error(`Could not load ticket report: ${error.message}`);
@@ -212,15 +254,17 @@ export async function getReportTickets({
 export async function getReportSummaryTickets({
   startDate,
   endDate,
-  status
+  status,
+  serviceTeamId
 }: {
   startDate?: string;
   endDate?: string;
   status?: string;
+  serviceTeamId?: number;
 }) {
   const supabase = await createClient();
   const pageSize = 1000;
-  const tickets: Array<Pick<Ticket, "status" | "priority" | "created_at" | "reopened_at" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">> = [];
+  const tickets: Array<Pick<Ticket, "status" | "priority" | "created_at" | "first_response_at" | "reopened_at" | "resolved_at" | "service_team_id" | "ccg_request_type" | "ccg_stage_due_at">> = [];
   for (let offset = 0; ; offset += pageSize) {
     let query = supabase.from("tickets").select(reportSummarySelection).order("created_at", { ascending: false });
     if (startDate) query = query.gte("created_at", `${startDate}T00:00:00.000Z`);
@@ -230,6 +274,7 @@ export async function getReportSummaryTickets({
       query = query.lt("created_at", dayAfter.toISOString());
     }
     if (status) query = query.eq("status", status);
+    if (serviceTeamId !== undefined) query = query.eq("service_team_id", serviceTeamId);
     const { data, error } = await query.range(offset, offset + pageSize - 1)
       .returns<typeof tickets>();
     if (error) throw new Error(`Could not load ticket report summary: ${error.message}`);

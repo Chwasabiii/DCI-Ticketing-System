@@ -31,12 +31,13 @@ Implemented in the current prototype:
 - Supabase email/password sign-in and session-aware pages.
 - Client ticket submission and ticket list/detail pages.
 - Assignment, priority, status changes, comments, and internal notes.
-- Dashboard ticket counts, incoming queue, assigned view, overdue list, and a basic status report.
+- Dashboard ticket counts, incoming queue, assigned view, overdue list, and a triage inbox with server-side search, filters, pagination, and saved views.
+- In-app notifications, unread counts, mark-read actions, and per-user notification preferences.
+- Ticket reports with date, status, and service-team filters; paginated results; admin CSV export; and workload/SLA indicators.
 - Role-based navigation and initial row-level security policies in the SQL schema.
+- Vitest unit tests for priority/SLA calculations and ticket-draft storage, plus a pgTAP RLS suite in `supabase/tests/`.
 
 Still incomplete or needing confirmation:
-
-- Notifications page is a placeholder; the schema has a notifications table, but the app does not yet populate and display notifications.
 - Admins can invite client and employee accounts by email.
 - Ticket submission supports Service Request, Access Request, and Incident Report types, each tagged with one of six service categories. Incident tickets move through IT inspection and root-cause analysis before resolution.
 - Requesters can mark tickets confidential. Confidential ticket data and files are restricted by database policies to the requester, administrators, and assigned employees.
@@ -44,9 +45,10 @@ Still incomplete or needing confirmation:
 - Accounts with no sign-in for six months are marked inactive (not deleted); admins are excluded and can restore archived accounts.
 - Ticket file uploads are available from ticket submission and ticket details. Cost tables exist in the schema but are not wired into the user interface.
 - Ticket comments appear in real time for signed-in users who can view that ticket, once `ticket_comments` is enabled in the Supabase Realtime publication.
-- Reports are limited to ticket counts by status. Filtering, date ranges, exports, and business-specific metrics need requirements.
-- Confirm status transitions, role permissions, deadlines, internal-note visibility, and client close/reopen behavior with DCI.
-- Add automated tests and review authorization in every server action before production. Some server actions currently rely on database RLS to reject unauthorized writes and do not display database errors to the user.
+- Report averages currently use elapsed calendar time; confirm with DCI whether operational KPIs should instead use business hours, exclude waiting periods, or follow another definition.
+- The database RLS suite covers core ticket, comment, and attachment access, but application/server-action tests and broader workflow coverage are still needed.
+- Confirm status transitions, role permissions, deadlines, internal-note visibility, and client close/reopen behavior with DCI before production.
+- Production readiness still depends on applying and verifying migrations, configuring SMTP/MFA/secrets/monitoring, and practicing database, Auth, and Storage recovery. See [Security](./docs/SECURITY.md) and [Operations](./docs/SUPABASE_OPERATIONS.md).
 
 ## Technology
 
@@ -187,6 +189,7 @@ Never put a Supabase service-role key in browser-exposed variables or commit rea
 npm run dev        # Start the local development server
 npm run typecheck  # Check TypeScript types
 npm run lint       # Run Next.js lint checks
+npm test           # Run unit tests
 npm run build      # Create a production build
 npm run start      # Serve the production build locally
 ```

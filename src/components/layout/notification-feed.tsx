@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type MouseEvent } from "react";
 import { markAllNotificationsRead, markNotificationRead } from "@/lib/actions";
 import type { Notification } from "@/lib/types";
+import { formatDateTime } from "@/lib/utils";
 
 export function NotificationFeed({
   notifications,
@@ -84,7 +85,7 @@ export function NotificationFeed({
                 <span aria-hidden="true" className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${notification.is_read ? "bg-transparent" : "bg-accent"}`} />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm leading-5 text-slate-800">{notification.message ?? "Ticket update"}</span>
-                  <span className="mt-1 block text-[11px] text-slate-500">{new Date(notification.created_at).toLocaleString()}</span>
+                  <span className="mt-1 block text-[11px] text-slate-500">{formatDateTime(notification.created_at)}</span>
                 </span>
               </Link>
             </li>

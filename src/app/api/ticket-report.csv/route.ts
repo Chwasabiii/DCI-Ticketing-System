@@ -1,4 +1,4 @@
-import { getCurrentContext, getTicketSlaPolicies } from "@/lib/data";
+import { getCurrentContext, getServiceTeams, getTicketSlaPolicies } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { getTicketResolutionDueLabel } from "@/lib/utils";
 import type { Ticket } from "@/lib/types";
@@ -21,7 +21,12 @@ function csvCell(value: unknown) {
 }
 
 export async function GET(request: Request) {
-  const [{ profile }, supabase, slaPolicies] = await Promise.all([getCurrentContext(), createClient(), getTicketSlaPolicies()]);
+  const [{ profile }, supabase, slaPolicies, serviceTeams] = await Promise.all([
+    getCurrentContext(),
+    createClient(),
+    getTicketSlaPolicies(),
+    getServiceTeams({ inScopeOnly: true })
+  ]);
   if (profile?.user_side !== "admin" || profile.status !== "active") {
     return new Response("Forbidden", { status: 403 });
   }
@@ -31,18 +36,23 @@ export async function GET(request: Request) {
   const endDate = validDate(params.get("end"));
   const statusValue = params.get("status");
   const status = statusValue && allowedStatuses.has(statusValue) ? statusValue : undefined;
+  const serviceTeamNames = new Map(serviceTeams.map((team) => [team.id, team.name]));
+  const teamValue = params.get("team");
+  const serviceTeamId = teamValue && /^\d+$/.test(teamValue) && Number.isSafeInteger(Number(teamValue)) && Number(teamValue) > 0
+    ? Number(teamValue)
+    : undefined;
   let offset = 0;
   let finished = false;
 
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(new TextEncoder().encode("\uFEFFTicket,Title,Status,Priority,Created,Resolution target,Resolved\r\n"));
+      controller.enqueue(new TextEncoder().encode("\uFEFFTicket,Title,Service team,Status,Priority,Created,First response,Resolution target,Resolved,Reopened\r\n"));
     },
     async pull(controller) {
       if (finished) return;
       let query = supabase
         .from("tickets")
-        .select("id, ticket_no, title, status, priority, created_at, reopened_at, resolved_at")
+        .select("id, ticket_no, title, service_team_id, status, priority, created_at, first_response_at, reopened_at, resolved_at")
         .order("created_at", { ascending: false })
         .range(offset, offset + pageSize - 1);
       if (startDate) query = query.gte("created_at", `${startDate}T00:00:00.000Z`);
@@ -52,6 +62,7 @@ export async function GET(request: Request) {
         query = query.lt("created_at", dayAfter.toISOString());
       }
       if (status) query = query.eq("status", status);
+      if (serviceTeamId !== undefined) query = query.eq("service_team_id", serviceTeamId);
 
       const { data, error } = await query;
       if (error) {
@@ -65,11 +76,14 @@ export async function GET(request: Request) {
         const lines = rows.map((ticket) => [
           ticket.ticket_no ?? ticket.id,
           ticket.title,
+          serviceTeamNames.get(ticket.service_team_id) ?? ticket.service_team_id ?? "",
           ticket.status,
           ticket.priority,
           ticket.created_at,
+          ticket.first_response_at,
           getTicketResolutionDueLabel(ticket as Ticket, slaPolicies),
-          ticket.resolved_at
+          ticket.resolved_at,
+          ticket.reopened_at
         ].map(csvCell).join(",")).join("\r\n");
         controller.enqueue(new TextEncoder().encode(`${lines}\r\n`));
       }

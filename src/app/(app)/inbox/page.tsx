@@ -2,31 +2,64 @@ import { redirect } from "next/navigation";
 import { TicketTriageInbox } from "@/components/tickets/ticket-triage-inbox";
 import { getAssignableEmployees, getCurrentContext, getInboxTickets, getTicketSlaPolicies } from "@/lib/data";
 
-const allowedViews = ["all", "unassigned", "mine", "overdue"] as const;
+const views = ["all", "unassigned", "mine", "overdue", "resolved"] as const;
+const statuses = ["open", "under_review", "assigned", "in_progress", "waiting_for_info", "resolved", "closed", "rejected"] as const;
+const priorities = ["urgent", "high", "medium", "low"] as const;
+const pageSize = 25;
+
+function getParam(params: Record<string, string | string[] | undefined>, key: string) {
+  const value = params[key];
+  return typeof value === "string" ? value : undefined;
+}
 
 export default async function TriageInboxPage({
   searchParams
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const [{ profile, roleNames }, slaPolicies, params] = await Promise.all([
-    getCurrentContext(),
-    getTicketSlaPolicies(),
-    searchParams
-  ]);
+  const [{ profile, roleNames }, params] = await Promise.all([getCurrentContext(), searchParams]);
   if (!profile) redirect("/login");
   if (profile.user_side === "client") redirect("/tickets");
-  const initialView = allowedViews.find((view) => view === params.view) ?? "all";
+  const initialView = views.find((view) => view === getParam(params, "view")) ?? "all";
+  const status = statuses.find((item) => item === getParam(params, "status"));
+  const priority = priorities.find((item) => item === getParam(params, "priority"));
+  const needsPriorityReview = getParam(params, "review") === "needs_review";
+  const search = (getParam(params, "q") ?? "").trim().slice(0, 100);
+  const requestedPage = Number(getParam(params, "page") ?? "1");
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   const isItSupportProvider = profile.user_side === "employee" && profile.service_team?.slug === "it-support";
   const canAssign = profile.user_side === "admin" || isItSupportProvider || roleNames.includes("Coordinator");
   const canChangeStatus = profile.user_side === "admin" || isItSupportProvider || roleNames.includes("Personnel") || roleNames.includes("Coordinator");
   const canBulkChangeStatus = profile.user_side === "admin" || isItSupportProvider || roleNames.includes("Personnel");
-  const [tickets, employees] = await Promise.all([
-    getInboxTickets(profile.user_side === "employee" ? profile.service_team_id ?? -1 : undefined),
+  const serviceTeamId = profile.user_side === "employee" ? profile.service_team_id ?? -1 : undefined;
+  const [inboxPage, employees, slaPolicies] = await Promise.all([
+    getInboxTickets({
+      serviceTeamId,
+      view: initialView,
+      status,
+      priority,
+      needsPriorityReview,
+      search,
+      page,
+      pageSize
+    }),
     canAssign
       ? getAssignableEmployees(profile.user_side === "employee" ? profile.service_team_id : undefined)
-      : Promise.resolve([])
+      : Promise.resolve([]),
+    getTicketSlaPolicies()
   ]);
+  const totalPages = Math.max(1, Math.ceil(inboxPage.totalCount / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const visiblePage = currentPage === page ? inboxPage : await getInboxTickets({
+    serviceTeamId,
+    view: initialView,
+    status,
+    priority,
+    needsPriorityReview,
+    search,
+    page: currentPage,
+    pageSize
+  });
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5">
@@ -38,7 +71,12 @@ export default async function TriageInboxPage({
         </p>
       </header>
       <TicketTriageInbox
-        tickets={tickets}
+        key={`${initialView}-${status ?? ""}-${priority ?? ""}-${needsPriorityReview}-${search}-${currentPage}`}
+        tickets={visiblePage.tickets}
+        totalCount={visiblePage.totalCount}
+        page={currentPage}
+        pageSize={pageSize}
+        filters={{ view: initialView, status: status ?? "all", priority: priority ?? "all", needsPriorityReview, search }}
         currentUserId={profile.id}
         slaPolicies={slaPolicies}
         employees={employees}
@@ -46,7 +84,6 @@ export default async function TriageInboxPage({
         canChangeStatus={canChangeStatus}
         canBulkChangeStatus={canBulkChangeStatus}
         canClaim={profile.user_side === "employee" && Boolean(profile.service_team_id)}
-        initialView={initialView}
       />
     </div>
   );

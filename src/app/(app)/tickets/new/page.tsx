@@ -4,12 +4,12 @@ import { ArrowRight, Calculator, CheckCircle2, CircleHelp, TicketPlus } from "lu
 import { TicketForm } from "@/components/tickets/ticket-form";
 import { getCurrentContext } from "@/lib/data";
 
-export default async function NewTicketPage({ searchParams }: { searchParams: Promise<{ team?: string }> }) {
+export default async function NewTicketPage({ searchParams }: { searchParams: Promise<{ team?: string; draft?: string }> }) {
   const { profile } = await getCurrentContext();
   if (!profile) redirect("/login");
   if (profile.user_side !== "client") redirect("/dashboard");
 
-  const { team } = await searchParams;
+  const { team, draft } = await searchParams;
   const teamSlug = team === "cost-control" || team === "it-support" ? team : null;
   if (!teamSlug) {
     return (
@@ -57,7 +57,7 @@ export default async function NewTicketPage({ searchParams }: { searchParams: Pr
       </header>
       {teamSlug === "cost-control" && <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">CCG support does not cover PMG requests that include Procurement in their scope. Vendor quote timing is 3–6 weeks; CCG cannot guarantee a vendor will respond or suit the work’s scope and complexity.</p>}
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_280px]">
-        <TicketForm teamSlug={teamSlug} />
+        <TicketForm key={`${teamSlug}-${draft ?? ""}`} teamSlug={teamSlug} />
         <aside className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
           <section className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)]">
             <h2 className="font-bold text-navy">A few tips</h2>
