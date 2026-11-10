@@ -83,6 +83,14 @@ export default async function TicketDetailPage({
   const resolvedBy = resolvedEvent?.kind === "event"
     ? resolvedEvent.actor?.full_name?.trim() || resolvedEvent.actor?.email || "Support team member"
     : null;
+  const lastStaffActivity = [...activity].reverse().find((item) =>
+    item.actor?.user_side === "employee" || item.actor?.user_side === "admin"
+  );
+  const lastWorkerName = lastStaffActivity?.actor?.full_name?.trim()
+    || lastStaffActivity?.actor?.email
+    || people.assignee?.full_name?.trim()
+    || people.assignee?.email
+    || "No staff activity yet";
   if (!ticket || !context.profile) notFound();
 
   const ccgRequestTypes = ticket.ccg_request_types?.length
@@ -201,7 +209,7 @@ export default async function TicketDetailPage({
               ["Reported impact / urgency", ticket.reported_impact && ticket.reported_urgency ? `${ticket.reported_impact} impact · ${ticket.reported_urgency} urgency` : "Not recorded"],
               ["Priority review", needsTicketPriorityReview(ticket) ? "Pending service team review" : ticket.priority_reviewed_at ? "Reviewed by service team" : "No elevated rating to review"],
               ["Resolution target", getTicketResolutionDueLabel(ticket, slaPolicies)],
-              ["Assigned handler", people.assignee?.full_name?.trim() || people.assignee?.email || "Service team (not yet assigned)"]
+              ["Last worked by", lastWorkerName]
             ].map(([label, value]) => (
               <div key={label} className="min-h-[76px] rounded-xl border border-slate-100 bg-gradient-to-br from-white to-slate-50/80 px-3.5 py-3 shadow-sm">
                 <dt className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</dt>

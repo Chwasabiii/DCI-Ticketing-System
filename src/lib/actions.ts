@@ -651,7 +651,7 @@ export async function createTicket(formData: FormData) {
   if (error || !ticket) {
     if (error?.code === "42501") {
       return {
-        error: `Supabase rejected ticket creation with row-level security even though the INSERT checks passed (database role: ${currentSide}, profile status: ${requesterProfile.status}, account type: ${requesterProfile.user_side}, requester: authenticated user, status: open, assignee: unassigned). Apply the latest ticket requester read-policy migration, then retry.`
+        error: `Supabase denied ticket creation: ${error.message} (database role: ${currentSide}, profile status: ${requesterProfile.status}, account type: ${requesterProfile.user_side}). This can be caused by either the tickets INSERT policy or the SELECT policy needed to return the new ticket. Check the Supabase database logs before changing policies.`
       };
     }
     return { error: error?.message ?? "The ticket could not be created." };
