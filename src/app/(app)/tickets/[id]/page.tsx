@@ -9,6 +9,7 @@ import { TicketActivityTimeline } from "@/components/tickets/ticket-activity-tim
 import { TicketHandoffForm } from "@/components/tickets/ticket-handoff-form";
 import { RelatedTickets } from "@/components/tickets/related-tickets";
 import { TicketSatisfactionSurvey } from "@/components/tickets/ticket-satisfaction-survey";
+import { CcgTicketStatusBar } from "@/components/tickets/ccg-ticket-status-bar";
 import { Badge } from "@/components/ui/badge";
 import {
   getCurrentContext,
@@ -122,12 +123,19 @@ export default async function TicketDetailPage({
     && context.roleNames.includes("Personnel")
     && !context.roleNames.includes("Coordinator")
     && ticketIsActive;
+  const isCcgTicket = ticket.service_team?.slug === "cost-control" && Boolean(ticket.ccg_request_type);
+  const canWorkCcgTicket = context.profile.user_side === "admin"
+    || (context.profile.user_side === "employee"
+      && context.profile.service_team_id === ticket.service_team_id
+      && (context.roleNames.includes("Personnel") || context.roleNames.includes("Coordinator")));
   const ticketListHref = context.profile.user_side === "client" ? "/tickets" : "/inbox";
   const ticketListLabel = context.profile.user_side === "client" ? "Back to my tickets" : "Back to triage inbox";
-  const canUseQuickActions = ticket.service_team?.slug === "it-support"
-    && ticketIsActive
-    && (context.profile.user_side === "admin"
-      || (context.profile.user_side === "employee" && context.profile.service_team_id === ticket.service_team_id));
+  const canUseQuickActions = ticketIsActive && (
+    (ticket.service_team?.slug === "it-support"
+      && (context.profile.user_side === "admin"
+        || (context.profile.user_side === "employee" && context.profile.service_team_id === ticket.service_team_id)))
+    || (isCcgTicket && canWorkCcgTicket)
+  );
   const canQuickAssign = context.profile.user_side === "admin"
     || (context.profile.user_side === "employee"
       && context.profile.service_team_id === ticket.service_team_id
@@ -217,6 +225,7 @@ export default async function TicketDetailPage({
               </div>
             ))}
           </dl>
+          {isCcgTicket && <CcgTicketStatusBar ticket={ticket} />}
           {ticket.ccg_request_type && (
             <section className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 sm:p-5">
               <h2 className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-800">CCG request workflow</h2>
@@ -307,29 +316,60 @@ export default async function TicketDetailPage({
             <div className="border-b border-slate-100 bg-gradient-to-br from-blue-50 via-white to-indigo-50 px-5 py-4">
               <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-accent">Ticket workspace</p>
               <h2 className="mt-1 text-lg font-bold text-navy">Manage request</h2>
-              <p className="mt-1 text-xs leading-5 text-slate-500">Assign ownership, move the request forward, and send the completed response.</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">{isCcgTicket ? "Review the CCG request, record its database and vendor decisions, and prepare the response." : "Assign ownership, move the request forward, and send the completed response."}</p>
             </div>
-            <TicketQueueActions
-              ticket={ticket}
-              employees={routeOptions.people}
-              canAssign={canQuickAssign}
-              canChangeStatus={canQuickChangeStatus}
-              canClaim={context.profile.user_side === "employee" && context.profile.service_team_id === ticket.service_team_id}
-              currentUserId={context.profile.id}
-              slaPolicies={slaPolicies}
-              variant="panel"
-            />
-            {canViewTicketActions && <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
-              <TicketActions
-                key={`${ticket.id}-${ticket.updated_at ?? ""}`}
-                ticket={ticket}
-                profile={context.profile}
-                roles={context.roleNames}
-                people={routeOptions.people}
-                resolvedBy={resolvedBy}
-                compact
-              />
-            </div>}
+            {isCcgTicket ? (
+              <>
+                <TicketQueueActions
+                  ticket={ticket}
+                  employees={routeOptions.people}
+                  canAssign={false}
+                  canChangeStatus={false}
+                  canClaim={context.profile.user_side === "employee"
+                    && context.profile.service_team_id === ticket.service_team_id
+                    && (context.roleNames.includes("Personnel") || context.roleNames.includes("Coordinator"))}
+                  currentUserId={context.profile.id}
+                  slaPolicies={slaPolicies}
+                  variant="panel"
+                  claimOnly
+                />
+                {canViewTicketActions && <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
+                  <TicketActions
+                    key={`${ticket.id}-${ticket.updated_at ?? ""}`}
+                    ticket={ticket}
+                    profile={context.profile}
+                    roles={context.roleNames}
+                    people={routeOptions.people}
+                    resolvedBy={resolvedBy}
+                    workspace
+                  />
+                </div>}
+              </>
+            ) : (
+              <>
+                <TicketQueueActions
+                  ticket={ticket}
+                  employees={routeOptions.people}
+                  canAssign={canQuickAssign}
+                  canChangeStatus={canQuickChangeStatus}
+                  canClaim={context.profile.user_side === "employee" && context.profile.service_team_id === ticket.service_team_id}
+                  currentUserId={context.profile.id}
+                  slaPolicies={slaPolicies}
+                  variant="panel"
+                />
+                {canViewTicketActions && <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
+                  <TicketActions
+                    key={`${ticket.id}-${ticket.updated_at ?? ""}`}
+                    ticket={ticket}
+                    profile={context.profile}
+                    roles={context.roleNames}
+                    people={routeOptions.people}
+                    resolvedBy={resolvedBy}
+                    compact
+                  />
+                </div>}
+              </>
+            )}
           </div>}
           {canViewTicketActions && !canUseQuickActions && <TicketActions
             key={`${ticket.id}-${ticket.updated_at ?? ""}`}

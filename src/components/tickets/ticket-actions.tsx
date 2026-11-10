@@ -28,7 +28,8 @@ export function TicketActions({
   roles,
   people,
   resolvedBy,
-  compact = false
+  compact = false,
+  workspace = false
 }: {
   ticket: Ticket;
   profile: Profile;
@@ -36,6 +37,7 @@ export function TicketActions({
   people: Profile[];
   resolvedBy: string | null;
   compact?: boolean;
+  workspace?: boolean;
 }) {
   const router = useRouter();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -244,15 +246,15 @@ export function TicketActions({
   }
 
   return (
-    <div className={compact ? "" : "overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_100px_rgba(20,40,75,0.06)]"}>
-      {!compact && <div className="h-1.5 bg-gradient-to-r from-accent via-blue-400 to-indigo-300" />}
+    <div className={compact || workspace ? "" : "overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_100px_rgba(20,40,75,0.06)]"}>
+      {!compact && !workspace && <div className="h-1.5 bg-gradient-to-r from-accent via-blue-400 to-indigo-300" />}
       {confirmDialog}
-      <div className={compact ? "" : "p-5 sm:p-7"}>
-        {!compact && <div className="mb-3 flex items-center justify-between gap-3">
+      <div className={compact || workspace ? "" : "p-5 sm:p-7"}>
+        {!compact && !workspace && <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="text-base font-bold text-navy">Handle this request</h2>
           <Badge value={ticket.status} />
         </div>}
-        {!compact && ["resolved", "closed"].includes(ticket.status) && ticket.resolution_notes?.trim() && (
+        {!compact && !workspace && ["resolved", "closed"].includes(ticket.status) && ticket.resolution_notes?.trim() && (
           <div className="mb-4 rounded-xl border border-green-100 bg-green-50/60 p-4">
             <h3 className="text-xs font-bold uppercase tracking-[0.12em] text-green-800">
               {ticket.request_type === "incident_report" ? "Inspection and root cause findings" : "Resolution summary"}

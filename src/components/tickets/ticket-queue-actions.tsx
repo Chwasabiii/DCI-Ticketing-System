@@ -24,7 +24,8 @@ export function TicketQueueActions({
   canClaim,
   currentUserId,
   slaPolicies,
-  variant = "row"
+  variant = "row",
+  claimOnly = false
 }: {
   ticket: Ticket;
   employees: Profile[];
@@ -34,6 +35,7 @@ export function TicketQueueActions({
   currentUserId: string;
   slaPolicies: TicketSlaPolicy[];
   variant?: "row" | "panel";
+  claimOnly?: boolean;
 }) {
   const router = useRouter();
   const { confirm, dialog: confirmDialog } = useConfirmDialog();
@@ -94,6 +96,15 @@ export function TicketQueueActions({
   const canAssignActive = canAssign && activeTicket;
   const canChangeStatusActive = canChangeStatus && activeTicket;
   if (variant === "row" ? !canClaimTicket : !canAssignActive && !canChangeStatusActive && !canClaimTicket) return null;
+  if (variant === "panel" && claimOnly) {
+    return (
+      <div className="p-4 sm:p-5">
+        {confirmDialog}
+        {canClaimTicket && <button type="button" onClick={() => void submitClaim()} disabled={pending} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-800 transition hover:bg-blue-100 disabled:opacity-60">{pending ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}{ticket.assigned_to ? "Take over ticket" : "Claim this ticket"}</button>}
+        {message && <p role="status" className={`mt-3 rounded-lg px-3 py-2 text-xs leading-5 ${message.toLowerCase().includes("could not") ? "bg-red-50 text-red-700" : "bg-slate-50 text-slate-600"}`}>{message}</p>}
+      </div>
+    );
+  }
 
   const statusLabel = quickStatuses.find(([value]) => value === ticket.status)?.[1] ?? ticket.status;
   const statusControl = canChangeStatusActive && (
