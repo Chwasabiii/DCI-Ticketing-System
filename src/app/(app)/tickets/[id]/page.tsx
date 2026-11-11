@@ -397,6 +397,7 @@ export default async function TicketDetailPage({
           initialActivity={activity}
           currentUserId={context.profile.id}
           allowInternalNotes={context.profile.user_side !== "client"}
+          canComment={ticketIsActive}
           canSubmitResolution={canSubmitResolution && ticketIsActive}
           isIncidentReport={ticket.request_type === "incident_report"}
           actions={null}

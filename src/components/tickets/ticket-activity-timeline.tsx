@@ -73,6 +73,7 @@ export function TicketActivityTimeline({
   initialActivity,
   currentUserId,
   allowInternalNotes,
+  canComment,
   canSubmitResolution,
   isIncidentReport,
   actions
@@ -81,6 +82,7 @@ export function TicketActivityTimeline({
   initialActivity: TicketActivity[];
   currentUserId: string;
   allowInternalNotes: boolean;
+  canComment: boolean;
   canSubmitResolution: boolean;
   isIncidentReport: boolean;
   actions: ReactNode;
@@ -250,12 +252,18 @@ export function TicketActivityTimeline({
         </ol>
       )}
       <div className="mt-5 border-t border-slate-100 bg-slate-50/50 px-5 py-5 sm:px-6">
-        <TicketCommentForm
-          ticketId={ticketId}
-          allowInternalNotes={allowInternalNotes}
-          canSubmitResolution={canSubmitResolution}
-          isIncidentReport={isIncidentReport}
-        />
+        {canComment ? (
+          <TicketCommentForm
+            ticketId={ticketId}
+            allowInternalNotes={allowInternalNotes}
+            canSubmitResolution={canSubmitResolution}
+            isIncidentReport={isIncidentReport}
+          />
+        ) : (
+          <p className="text-sm text-slate-600">
+            This ticket is complete. The requester must reopen it if more help is needed.
+          </p>
+        )}
       </div>
       {actions}
     </section>

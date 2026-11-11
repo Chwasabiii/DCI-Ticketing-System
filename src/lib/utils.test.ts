@@ -54,4 +54,50 @@ describe("business-day SLA calculations", () => {
     expect(getTicketSlaIndicators(ticket, [...policies], Date.parse("2026-11-10T10:00:00.000Z")).map(({ key }) => key))
       .toEqual(["response", "resolution"]);
   });
+
+  it("uses the resolution timestamp as a response for completed tickets without a first response timestamp", () => {
+    const ticket = {
+      id: 1,
+      title: "Test ticket",
+      priority: "high",
+      status: "resolved",
+      created_at: "2026-11-06T09:00:00.000Z",
+      reopened_at: null,
+      resolved_at: "2026-11-09T08:00:00.000Z",
+      ccg_request_type: null,
+      ccg_stage_due_at: null,
+      first_response_at: null
+    } as const;
+    const policies = [{
+      priority_group: "high",
+      first_response_business_days: 1,
+      resolution_business_days: 2
+    }] as const;
+
+    expect(getTicketSlaIndicators(ticket, [...policies], Date.parse("2026-11-10T10:00:00.000Z")))
+      .toEqual([]);
+  });
+
+  it("reports a missed response SLA for a completed ticket resolved after the response deadline", () => {
+    const ticket = {
+      id: 1,
+      title: "Test ticket",
+      priority: "high",
+      status: "resolved",
+      created_at: "2026-11-06T09:00:00.000Z",
+      reopened_at: null,
+      resolved_at: "2026-11-10T10:00:00.000Z",
+      ccg_request_type: null,
+      ccg_stage_due_at: null,
+      first_response_at: null
+    } as const;
+    const policies = [{
+      priority_group: "high",
+      first_response_business_days: 1,
+      resolution_business_days: 2
+    }] as const;
+
+    expect(getTicketSlaIndicators(ticket, [...policies], Date.parse("2026-11-11T10:00:00.000Z")).map(({ key }) => key))
+      .toEqual(["response", "resolution"]);
+  });
 });

@@ -134,16 +134,18 @@ export function getTicketSlaIndicators(ticket: Ticket, policies: TicketSlaPolicy
   if (!Number.isFinite(createdAt)) return [];
   const indicators: Array<{ key: string; label: string; state: "warning" | "breached" }> = [];
   const responseDeadline = addBusinessDays(createdAt, policy.first_response_business_days);
-  if (ticket.first_response_at) {
-    if (Date.parse(ticket.first_response_at) > responseDeadline) indicators.push({ key: "response", label: "Response SLA missed", state: "breached" });
-  } else if (now > responseDeadline) {
+  const finalStates = ["resolved", "closed", "rejected"];
+  const responseAt = ticket.first_response_at
+    ?? (finalStates.includes(ticket.status) ? ticket.resolved_at : null);
+  if (responseAt) {
+    if (Date.parse(responseAt) > responseDeadline) indicators.push({ key: "response", label: "Response SLA missed", state: "breached" });
+  } else if (!finalStates.includes(ticket.status) && now > responseDeadline) {
     indicators.push({ key: "response", label: "Response SLA overdue", state: "breached" });
-  } else if (responseDeadline - now <= Math.max(3_600_000, policy.first_response_business_days * 86_400_000 * 0.25)) {
+  } else if (!finalStates.includes(ticket.status) && responseDeadline - now <= Math.max(3_600_000, policy.first_response_business_days * 86_400_000 * 0.25)) {
     indicators.push({ key: "response", label: "Response due soon", state: "warning" });
   }
 
   const resolutionDeadline = addBusinessDays(createdAt, policy.resolution_business_days);
-  const finalStates = ["closed", "rejected"];
   if (ticket.resolved_at) {
     if (Date.parse(ticket.resolved_at) > resolutionDeadline) indicators.push({ key: "resolution", label: "Resolution SLA missed", state: "breached" });
   } else if (now > resolutionDeadline && !finalStates.includes(ticket.status)) {

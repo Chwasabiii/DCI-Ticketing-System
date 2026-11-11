@@ -753,6 +753,18 @@ export async function addComment(formData: FormData) {
   }
   if (body.length > 5000) return { error: "Comments must be 5,000 characters or fewer." };
 
+  const { data: ticket, error: ticketError } = await supabase
+    .from("tickets")
+    .select("status")
+    .eq("id", ticketId)
+    .maybeSingle();
+  if (ticketError || !ticket) {
+    return { error: "The ticket could not be found or you do not have access to it." };
+  }
+  if (["resolved", "closed", "rejected"].includes(ticket.status)) {
+    return { error: "This ticket is complete. The requester must reopen it before anyone can reply." };
+  }
+
   const { data: comment, error } = await supabase
     .from("ticket_comments")
     .insert({
