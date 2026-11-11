@@ -872,6 +872,7 @@ export async function submitTicketFeedback(formData: FormData) {
 
   revalidatePath(`/tickets/${ticketId}`);
   revalidatePath("/reports");
+  revalidatePath("/performance");
   return { success: "Thank you. Your feedback has been submitted." };
 }
 

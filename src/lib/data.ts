@@ -17,6 +17,7 @@ import type {
   TicketEvent,
   Ticket,
   TicketFeedback,
+  TicketFeedbackSummary,
   TicketSlaPolicy,
   UserRole
 } from "@/lib/types";
@@ -268,6 +269,18 @@ export async function getInboxTickets({
 
 export async function getPerformanceTickets(serviceTeamId: number, createdAfter: string) {
   return getPagedTickets(performanceTicketSelection, serviceTeamId, createdAfter);
+}
+
+export async function getMyTicketFeedbackSummary(): Promise<TicketFeedbackSummary> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_my_ticket_feedback_summary");
+  if (error) throw new Error(`Could not load requester rating: ${error.message}`);
+  const summary = data?.[0];
+  if (!summary) throw new Error("Could not load requester rating: the database returned no summary.");
+  return {
+    average_rating: summary.average_rating,
+    response_count: summary.response_count
+  };
 }
 
 export async function getReportTickets({

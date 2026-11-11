@@ -72,7 +72,7 @@ export function TicketWorkloadView({ tickets, currentUserId, slaPolicies = [], c
         <span>{refreshing ? "Updating tickets…" : tickets.length ? "Tickets up to date" : "No tickets to show"}</span>
         <button type="button" onClick={() => startRefresh(() => router.refresh())} disabled={refreshing} className="inline-flex min-h-8 items-center gap-1.5 rounded-control px-2 font-medium text-accent transition-colors duration-150 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />Refresh</button>
       </div>
-      <TicketTable tickets={visibleTickets} slaPolicies={slaPolicies} variant="table" createTicketHref={canCreateTickets ? "/tickets/new" : undefined} />
+      <TicketTable tickets={visibleTickets} slaPolicies={slaPolicies} createTicketHref={canCreateTickets ? "/tickets/new" : undefined} />
     </section>
   );
 }

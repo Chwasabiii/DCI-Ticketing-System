@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { Activity, CalendarDays, CircleHelp, Gauge, Users } from "lucide-react";
-import { getAssignableEmployees, getCurrentContext, getPerformanceTickets, getTicketSlaPolicies } from "@/lib/data";
+import { Activity, CalendarDays, CircleHelp, Gauge, Star, Users } from "lucide-react";
+import { getAssignableEmployees, getCurrentContext, getMyTicketFeedbackSummary, getPerformanceTickets, getTicketSlaPolicies } from "@/lib/data";
 import { getTicketSlaIndicators } from "@/lib/utils";
 import type { Profile, Ticket, TicketSlaPolicy } from "@/lib/types";
 
@@ -93,8 +93,11 @@ export default async function PerformancePage() {
 
   const now = Date.now();
   const periodStart = now - 90 * 24 * 60 * 60 * 1000;
-  const allTickets = await getPerformanceTickets(profile.service_team_id, new Date(periodStart).toISOString());
-  const providers = await getAssignableEmployees(profile.service_team_id);
+  const [allTickets, providers, feedbackSummary] = await Promise.all([
+    getPerformanceTickets(profile.service_team_id, new Date(periodStart).toISOString()),
+    getAssignableEmployees(profile.service_team_id),
+    getMyTicketFeedbackSummary()
+  ]);
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
   providerById.set(profile.id, profile);
   const teamProviders = [...providerById.values()].filter((provider) => provider.status === "active");
@@ -129,6 +132,22 @@ export default async function PerformancePage() {
         <MetricCard label="Team KPI score" value={teamMetrics.score} detail={`${teamMetrics.assignedCount} assigned tickets in the period`} icon={Users} />
         <MetricCard label="My KPI score" value={myMetrics.score} detail={`${myMetrics.assignedCount} assigned tickets in the period`} icon={Gauge} />
         <MetricCard label="Team resolution SLA" value={teamMetrics.resolutionRate} detail={`${teamMetrics.resolutionCount} tickets with a measured resolution outcome`} icon={Activity} />
+      </section>
+
+      <section aria-label="Requester feedback rating" className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 shadow-[0_4px_18px_rgba(20,40,75,0.035)] sm:p-6">
+        <div className="flex items-start gap-4">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-white text-amber-500 shadow-sm"><Star className="h-5 w-5 fill-amber-400" /></span>
+          <div>
+            <h2 className="text-sm font-semibold text-slate-600">My requester rating</h2>
+            <p className="mt-1 text-3xl font-bold tracking-tight text-navy">{feedbackSummary.average_rating === null ? "—" : `${feedbackSummary.average_rating.toFixed(1)} / 5`}</p>
+            <p className="mt-2 text-sm text-slate-600">
+              {feedbackSummary.response_count === 0
+                ? "No attributed ratings yet. Ratings are linked to the provider assigned when a ticket is resolved; older tickets without that recorded assignment are not included."
+                : `Average from ${feedbackSummary.response_count} ${feedbackSummary.response_count === 1 ? "rating" : "ratings"}, attributed to you when tickets were resolved.`}
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Requester ratings are separate from your SLA KPI.</p>
+          </div>
+        </div>
       </section>
 
       <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_4px_18px_rgba(20,40,75,0.035)]">

@@ -115,6 +115,7 @@ export type Ticket = {
   ccg_requester_wait_seconds?: number;
   requester_id?: string | null;
   assigned_to?: string | null;
+  resolved_assignee_id?: string | null;
   service_team_id?: number | null;
   service_team?: Pick<ServiceTeam, "id" | "name" | "slug"> | null;
   resolution_notes?: string | null;
@@ -158,9 +159,15 @@ export type TicketFeedback = {
   id: string | number;
   ticket_id: string | number;
   requester_id: string;
+  provider_id?: string | null;
   rating: number;
   comment: string | null;
   created_at: string;
+};
+
+export type TicketFeedbackSummary = {
+  average_rating: number | null;
+  response_count: number;
 };
 
 export type SimilarTicket = Pick<Ticket, "id" | "ticket_no" | "title" | "status"> & {
