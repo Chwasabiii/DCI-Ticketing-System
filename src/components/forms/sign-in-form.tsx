@@ -52,14 +52,14 @@ export function SignInForm() {
     getServerRememberedEmail
   );
   const [email, setEmail] = useState<string | null>(null);
-  const [rememberEmail, setRememberEmail] = useState<boolean | null>(null);
+  const [rememberEmail, setRememberEmail] = useState(false);
   const [emailError, setEmailError] = useState("");
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [dismissedError, setDismissedError] = useState(false);
   const submissionStarted = useRef(false);
   const emailValue = email ?? savedEmail ?? "";
-  const rememberEmailValue = rememberEmail ?? Boolean(savedEmail);
+  const rememberEmailValue = rememberEmail;
 
   useEffect(() => {
     if (!isPending) submissionStarted.current = false;
@@ -189,7 +189,7 @@ export function SignInForm() {
           type="checkbox"
           checked={rememberEmailValue}
           onChange={(event) => setRememberEmail(event.currentTarget.checked)}
-          className="h-4 w-4 rounded border-border text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="h-4 w-4 rounded border-border accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         />
         Remember me
       </label>
@@ -209,6 +209,9 @@ export function SignInForm() {
         </p>
       )}
       <SubmitButton />
+      <p className="text-sm leading-5 text-neutral-600">
+        Forgot your password or need an account? Contact your administrator.
+      </p>
     </form>
   );
 }

@@ -3,17 +3,17 @@ import {
   AlertCircle,
   ArrowRight,
   ArrowUpRight,
-  BarChart3,
   CheckCircle2,
   Clock3,
   Ticket,
 } from "lucide-react";
 import { TicketTable } from "@/components/tickets/ticket-table";
 import { TicketReports } from "@/components/reports/ticket-reports";
-import { CostControlDashboard } from "@/components/tickets/cost-control-dashboard";
+import { ServiceDashboard } from "@/components/dashboard/service-dashboard";
 import { getDashboardTickets, getCurrentContext, getTicketSlaPolicies } from "@/lib/data";
 import { isTicketResolutionOverdue } from "@/lib/utils";
 import { EndUserDashboard } from "@/components/dashboard/end-user-dashboard";
+import { getServiceDepartmentConfig } from "@/lib/service-departments";
 
 function StatCard({
   label,
@@ -81,8 +81,15 @@ export default async function DashboardPage() {
     profile?.user_side === "employee" ? profile.service_team_id ?? -1 : undefined
   );
 
-  if (profile?.user_side === "employee" && profile.service_team?.slug === "cost-control") {
-    return <CostControlDashboard tickets={tickets} name={profile.full_name} slaPolicies={slaPolicies} />;
+  if (profile?.user_side === "employee") {
+    return (
+      <ServiceDashboard
+        tickets={tickets}
+        currentUserId={profile.id}
+        department={getServiceDepartmentConfig(profile.service_team?.slug, profile.service_team?.name)}
+        slaPolicies={slaPolicies}
+      />
+    );
   }
 
   const visibleTickets = tickets;
@@ -108,7 +115,7 @@ export default async function DashboardPage() {
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-blue-100">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              {profile?.user_side === "employee" ? profile.service_team?.name ?? roleLabel : roleLabel}
+              {roleLabel}
             </div>
             <h1 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
               Welcome back{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}
@@ -118,15 +125,6 @@ export default async function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            {profile?.user_side === "employee" && (
-              <Link
-                href="/performance"
-                className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-sm font-semibold text-white transition-colors hover:bg-white/15"
-              >
-                <BarChart3 className="h-4 w-4" />
-                KPI score
-              </Link>
-            )}
             <Link
               href="/tickets"
               className="focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 text-sm font-semibold text-white transition-colors hover:bg-white/10"
