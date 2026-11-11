@@ -43,3 +43,41 @@ export function Badge({
     </span>
   );
 }
+
+const ticketStatusStyles: Record<string, string> = {
+  open: "border-status-open/20 bg-status-open-bg text-status-open",
+  under_review: "border-status-open/20 bg-status-open-bg text-status-open",
+  assigned: "border-status-open/20 bg-status-open-bg text-status-open",
+  in_progress: "border-status-open/20 bg-status-open-bg text-status-open",
+  waiting_for_info: "border-status-waiting/20 bg-status-waiting-bg text-status-waiting",
+  resolved: "border-status-resolved/20 bg-status-resolved-bg text-status-resolved",
+  closed: "border-status-closed/20 bg-status-closed-bg text-status-closed",
+  rejected: "border-status-rejected/20 bg-status-rejected-bg text-status-rejected"
+};
+
+export function StatusBadge({ value }: { value?: string | null }) {
+  const normalized = value ?? "unset";
+
+  return (
+    <span     className={cn(
+      "inline-flex rounded-control border px-1.5 py-0.5 text-xs font-medium leading-4",
+      ticketStatusStyles[normalized] ?? "border-border bg-page text-muted"
+    )}>
+      {titleCase(normalized)}
+    </span>
+  );
+}
+
+export function PriorityBadge({ value }: { value?: string | null }) {
+  const normalized = value ?? "unset";
+  const isHigh = normalized === "urgent" || normalized === "high";
+  const styles = isHigh
+    ? "border-priority-high/20 bg-priority-high-bg text-priority-high"
+    : "border-priority-medium/20 bg-priority-medium-bg text-priority-medium";
+
+  return (
+    <span     className={cn("inline-flex rounded-control border px-1.5 py-0.5 text-xs font-medium leading-4", styles)}>
+      {titleCase(normalized)}
+    </span>
+  );
+}

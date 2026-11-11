@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { AlertCircle, ArrowUpRight, ChevronLeft, ChevronRight, LockKeyhole, Ticket as TicketIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { TicketListTable } from "@/components/tickets/ticket-list-table";
 import type { Ticket } from "@/lib/types";
 import { formatDate, getCcgDeadlineIndicators, getTicketResolutionDueLabel, getTicketSlaIndicators, needsTicketPriorityReview } from "@/lib/utils";
 import { TicketQueueActions } from "@/components/tickets/ticket-queue-actions";
@@ -26,7 +27,9 @@ export function TicketTable({
   selectedIds,
   onToggleSelection,
   selectableIds,
-  slaPolicies = []
+  slaPolicies = [],
+  variant = "list",
+  createTicketHref
 }: {
   tickets: Ticket[];
   nextActions?: Record<string, string>;
@@ -35,25 +38,47 @@ export function TicketTable({
   onToggleSelection?: (id: string) => void;
   selectableIds?: string[];
   slaPolicies?: TicketSlaPolicy[];
+  variant?: "list" | "table";
+  createTicketHref?: string;
 }) {
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [page, setPage] = useState(1);
   const pageSize = 10;
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredTickets = useMemo(() => ([...tickets].filter((ticket) => !normalizedQuery || [ticket.ticket_no, ticket.title, ticket.status, ticket.priority]
-        .some((value) => value?.toLocaleLowerCase().includes(normalizedQuery)))
-    ).sort((a, b) => {
+  const filteredTickets = useMemo(() => {
+    const matches = tickets.filter((ticket) => {
+      const searchableFields = [
+        ticket.ticket_no,
+        ticket.title,
+        ticket.status,
+        ticket.priority,
+        ticket.service_category,
+        ticket.assignee?.full_name,
+        ticket.assignee?.email
+      ];
+      return !normalizedQuery || searchableFields.some((value) => value?.toLocaleLowerCase().includes(normalizedQuery));
+    });
+
+    return matches.sort((a, b) => {
       if (sortBy === "priority") {
         const ranks: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
         return (ranks[String(b.priority)] ?? 0) - (ranks[String(a.priority)] ?? 0);
       }
       if (sortBy === "status") return String(a.status).localeCompare(String(b.status));
-      return Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? "");
-    }), [tickets, normalizedQuery, sortBy]);
+      if (sortBy === "category") return String(a.service_category).localeCompare(String(b.service_category));
+      if (sortBy === "subject") return a.title.localeCompare(b.title);
+      if (sortBy === "created") return Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? "");
+      return Date.parse(b.updated_at ?? b.created_at ?? "") - Date.parse(a.updated_at ?? a.created_at ?? "");
+    });
+  }, [tickets, normalizedQuery, sortBy]);
   const pageCount = Math.max(1, Math.ceil(filteredTickets.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visibleTickets = filteredTickets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  if (variant === "table") {
+    return <TicketListTable tickets={tickets} createTicketHref={createTicketHref} />;
+  }
 
   if (tickets.length === 0) {
     return (
@@ -68,6 +93,7 @@ export function TicketTable({
       </div>
     );
   }
+
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_4px_18px_rgba(20,40,75,0.035)]">

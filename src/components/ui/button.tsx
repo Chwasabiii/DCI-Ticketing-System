@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes } from "react";
-import { LoaderCircle } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -31,7 +31,13 @@ export function Button({
       )}
       {...props}
     >
-      {loading && <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />}
+      {loading && (
+        <Loader2
+          aria-hidden="true"
+          className="h-4 w-4 animate-spin"
+          strokeWidth={1.75}
+        />
+      )}
       {children}
     </button>
   );
