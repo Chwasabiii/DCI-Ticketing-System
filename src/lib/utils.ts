@@ -3,6 +3,10 @@ import { twMerge } from "tailwind-merge";
 import type { Priority, Ticket, TicketImpact, TicketSlaPolicy, TicketUrgency } from "@/lib/types";
 
 const appTimeZone = "Asia/Manila";
+const officeHoursOffsetMs = 8 * 60 * 60 * 1000;
+const officeStartMinute = 9 * 60;
+const officeEndMinute = 17 * 60;
+const officeDaySeconds = (officeEndMinute - officeStartMinute) * 60;
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -39,15 +43,76 @@ export function isTicketOverdue(ticket: Pick<Ticket, "ccg_request_type" | "ccg_s
   return false;
 }
 
-export function addBusinessDays(start: number, businessDays: number) {
-  const deadline = new Date(start);
-  let addedDays = 0;
-  while (addedDays < businessDays) {
-    deadline.setUTCDate(deadline.getUTCDate() + 1);
-    const weekday = deadline.getUTCDay();
-    if (weekday !== 0 && weekday !== 6) addedDays += 1;
+export function addBusinessSeconds(start: number, businessSeconds: number, holidayDates: readonly string[] = []) {
+  if (!Number.isFinite(start) || !Number.isFinite(businessSeconds)) return Number.NaN;
+  if (businessSeconds === 0) return start;
+
+  const direction = Math.sign(businessSeconds);
+  let remaining = Math.abs(businessSeconds);
+  let localTime = start + officeHoursOffsetMs;
+  const holidays = new Set(holidayDates);
+
+  while (remaining > 0) {
+    const date = new Date(localTime);
+    const weekday = date.getUTCDay();
+    const minuteOfDay = date.getUTCHours() * 60 + date.getUTCMinutes();
+
+    if (direction > 0) {
+      if (weekday === 0 || weekday === 6 || holidays.has(date.toISOString().slice(0, 10))) {
+        date.setUTCDate(date.getUTCDate() + 1);
+        date.setUTCHours(9, 0, 0, 0);
+        localTime = date.getTime();
+        continue;
+      }
+      if (minuteOfDay < officeStartMinute) {
+        date.setUTCHours(9, 0, 0, 0);
+        localTime = date.getTime();
+        continue;
+      }
+      if (minuteOfDay >= officeEndMinute) {
+        date.setUTCDate(date.getUTCDate() + 1);
+        date.setUTCHours(9, 0, 0, 0);
+        localTime = date.getTime();
+        continue;
+      }
+
+      const endOfWorkday = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 17);
+      const availableSeconds = (endOfWorkday - localTime) / 1000;
+      const step = Math.min(remaining, availableSeconds);
+      localTime += step * 1000;
+      remaining -= step;
+    } else {
+      if (weekday === 0 || weekday === 6 || holidays.has(date.toISOString().slice(0, 10))) {
+        date.setUTCDate(date.getUTCDate() - 1);
+        date.setUTCHours(17, 0, 0, 0);
+        localTime = date.getTime();
+        continue;
+      }
+      const startOfWorkday = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 9);
+      if (localTime <= startOfWorkday) {
+        date.setUTCDate(date.getUTCDate() - 1);
+        date.setUTCHours(17, 0, 0, 0);
+        localTime = date.getTime();
+        continue;
+      }
+      if (minuteOfDay > officeEndMinute) {
+        date.setUTCHours(17, 0, 0, 0);
+        localTime = date.getTime();
+        continue;
+      }
+
+      const availableSeconds = (localTime - startOfWorkday) / 1000;
+      const step = Math.min(remaining, availableSeconds);
+      localTime -= step * 1000;
+      remaining -= step;
+    }
   }
-  return deadline.getTime();
+
+  return localTime - officeHoursOffsetMs;
+}
+
+export function addBusinessDays(start: number, businessDays: number, holidayDates: readonly string[] = []) {
+  return addBusinessSeconds(start, businessDays * officeDaySeconds, holidayDates);
 }
 
 function businessDaysBetween(start: number, end: number) {
@@ -64,6 +129,25 @@ function businessDaysBetween(start: number, end: number) {
   return businessDays;
 }
 
+function manilaBusinessDaysBetween(start: number, end: number, holidayDates: readonly string[] = []) {
+  const currentDay = new Date(start + officeHoursOffsetMs);
+  currentDay.setUTCHours(0, 0, 0, 0);
+  const endDay = new Date(end + officeHoursOffsetMs);
+  endDay.setUTCHours(0, 0, 0, 0);
+  const holidays = new Set(holidayDates);
+  let businessDays = 0;
+  while (currentDay < endDay) {
+    currentDay.setUTCDate(currentDay.getUTCDate() + 1);
+    const weekday = currentDay.getUTCDay();
+    if (weekday !== 0 && weekday !== 6 && !holidays.has(currentDay.toISOString().slice(0, 10))) businessDays += 1;
+  }
+  return businessDays;
+}
+
+function getSlaHolidayDates(policies: TicketSlaPolicy[]) {
+  return policies[0]?.holiday_dates ?? [];
+}
+
 type TicketResolutionInput = Pick<Ticket, "priority" | "status" | "created_at" | "reopened_at" | "resolved_at" | "ccg_request_type" | "ccg_stage_due_at">;
 
 export function getTicketResolutionDueLabel(ticket: TicketResolutionInput, policies: TicketSlaPolicy[], now = Date.now()) {
@@ -76,7 +160,7 @@ export function getTicketResolutionDueLabel(ticket: TicketResolutionInput, polic
     }
     if (ticket.status === "waiting_for_info") return "Paused while awaiting requester";
     if (!ticket.ccg_stage_due_at) return "CCG service deadline";
-    return getBusinessDayCountdownLabel(Date.parse(ticket.ccg_stage_due_at), now);
+    return getCalendarBusinessDayCountdownLabel(Date.parse(ticket.ccg_stage_due_at), now);
   }
 
   const priorityGroup = ticket.priority === "high" || ticket.priority === "urgent" ? "high" : "standard";
@@ -85,20 +169,33 @@ export function getTicketResolutionDueLabel(ticket: TicketResolutionInput, polic
   if (!targetDays || !startedAt) return "SLA target not set";
   const start = Date.parse(startedAt);
   if (!Number.isFinite(start)) return "SLA target not set";
-  const deadline = addBusinessDays(start, targetDays);
+  const holidays = getSlaHolidayDates(policies);
+  const deadline = addBusinessDays(start, targetDays, holidays);
 
   if (ticket.resolved_at && ["resolved", "closed"].includes(ticket.status)) {
     return Date.parse(ticket.resolved_at) <= deadline ? "Resolved within target" : "Resolved after target";
   }
   if (["closed", "rejected"].includes(ticket.status)) return "No active deadline";
-  return getBusinessDayCountdownLabel(deadline, now);
+  return getBusinessDayCountdownLabel(deadline, now, holidays);
 }
 
 export function isTicketResolutionOverdue(ticket: TicketResolutionInput, policies: TicketSlaPolicy[], now = Date.now()) {
   return getTicketResolutionDueLabel(ticket, policies, now).startsWith("Overdue");
 }
 
-function getBusinessDayCountdownLabel(deadline: number, now: number) {
+function getBusinessDayCountdownLabel(deadline: number, now: number, holidayDates: readonly string[] = []) {
+  if (!Number.isFinite(deadline)) return "SLA target not set";
+  if (now >= deadline) {
+    const overdueDays = manilaBusinessDaysBetween(deadline, now, holidayDates);
+    return overdueDays > 0 ? `Overdue by ${overdueDays} business ${overdueDays === 1 ? "day" : "days"}` : "Overdue";
+  }
+  const remainingDays = manilaBusinessDaysBetween(now, deadline, holidayDates);
+  return remainingDays === 0
+    ? "Due today"
+    : `Due in ${remainingDays} business ${remainingDays === 1 ? "day" : "days"}`;
+}
+
+function getCalendarBusinessDayCountdownLabel(deadline: number, now: number) {
   if (!Number.isFinite(deadline)) return "SLA target not set";
   if (now >= deadline) {
     const overdueDays = businessDaysBetween(deadline, now);
@@ -133,24 +230,35 @@ export function getTicketSlaIndicators(ticket: Ticket, policies: TicketSlaPolicy
   const createdAt = Date.parse(slaStartedAt);
   if (!Number.isFinite(createdAt)) return [];
   const indicators: Array<{ key: string; label: string; state: "warning" | "breached" }> = [];
-  const responseDeadline = addBusinessDays(createdAt, policy.first_response_business_days);
+  const holidays = getSlaHolidayDates(policies);
+  const responseDeadline = addBusinessDays(createdAt, policy.first_response_business_days, holidays);
   const finalStates = ["resolved", "closed", "rejected"];
   const responseAt = ticket.first_response_at
     ?? (finalStates.includes(ticket.status) ? ticket.resolved_at : null);
+  const responseAtRisk = addBusinessSeconds(
+    createdAt,
+    policy.first_response_business_days * officeDaySeconds * 0.75,
+    holidays
+  );
   if (responseAt) {
     if (Date.parse(responseAt) > responseDeadline) indicators.push({ key: "response", label: "Response SLA missed", state: "breached" });
   } else if (!finalStates.includes(ticket.status) && now > responseDeadline) {
     indicators.push({ key: "response", label: "Response SLA overdue", state: "breached" });
-  } else if (!finalStates.includes(ticket.status) && responseDeadline - now <= Math.max(3_600_000, policy.first_response_business_days * 86_400_000 * 0.25)) {
+  } else if (!finalStates.includes(ticket.status) && now >= responseAtRisk) {
     indicators.push({ key: "response", label: "Response due soon", state: "warning" });
   }
 
-  const resolutionDeadline = addBusinessDays(createdAt, policy.resolution_business_days);
+  const resolutionDeadline = addBusinessDays(createdAt, policy.resolution_business_days, holidays);
+  const resolutionAtRisk = addBusinessSeconds(
+    createdAt,
+    policy.resolution_business_days * officeDaySeconds * 0.75,
+    holidays
+  );
   if (ticket.resolved_at) {
     if (Date.parse(ticket.resolved_at) > resolutionDeadline) indicators.push({ key: "resolution", label: "Resolution SLA missed", state: "breached" });
   } else if (now > resolutionDeadline && !finalStates.includes(ticket.status)) {
     indicators.push({ key: "resolution", label: "Resolution SLA overdue", state: "breached" });
-  } else if (resolutionDeadline - now <= Math.max(3_600_000, policy.resolution_business_days * 86_400_000 * 0.25) && !finalStates.includes(ticket.status)) {
+  } else if (now >= resolutionAtRisk && !finalStates.includes(ticket.status)) {
     indicators.push({ key: "resolution", label: "Resolution due soon", state: "warning" });
   }
   return indicators;

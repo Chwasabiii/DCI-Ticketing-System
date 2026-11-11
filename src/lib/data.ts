@@ -130,10 +130,24 @@ export async function getServiceTeams({ inScopeOnly = false }: { inScopeOnly?: b
 
 export async function getTicketSlaPolicies(): Promise<TicketSlaPolicy[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("ticket_sla_policies")
-    .select("priority_group, first_response_business_days, resolution_business_days, updated_at")
-    .order("priority_group").returns<TicketSlaPolicy[]>();
-  if (error) throw new Error(`Could not load ticket SLA policies: ${error.message}`);
+  const [policiesResult, holidaysResult] = await Promise.all([
+    supabase.from("ticket_sla_policies")
+      .select("priority_group, first_response_business_days, resolution_business_days, updated_at")
+      .order("priority_group").returns<TicketSlaPolicy[]>(),
+    supabase.from("ticket_sla_holidays")
+      .select("holiday_date").order("holiday_date")
+  ]);
+  if (policiesResult.error) throw new Error(`Could not load ticket SLA policies: ${policiesResult.error.message}`);
+  if (holidaysResult.error) throw new Error(`Could not load ticket SLA holidays: ${holidaysResult.error.message}`);
+  const holidayDates = (holidaysResult.data ?? []).map(({ holiday_date }) => holiday_date);
+  return (policiesResult.data ?? []).map((policy) => ({ ...policy, holiday_dates: holidayDates }));
+}
+
+export async function getTicketSlaHolidays(): Promise<BusinessHoliday[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("ticket_sla_holidays")
+    .select("holiday_date, name").order("holiday_date").returns<BusinessHoliday[]>();
+  if (error) throw new Error(`Could not load ticket SLA holidays: ${error.message}`);
   return data ?? [];
 }
 

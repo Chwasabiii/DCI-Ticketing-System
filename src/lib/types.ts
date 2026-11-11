@@ -133,6 +133,7 @@ export type TicketSlaPolicy = {
   first_response_business_days: number;
   resolution_business_days: number;
   updated_at?: string;
+  holiday_dates?: readonly string[];
 };
 
 export type ServiceDashboardMetrics = {

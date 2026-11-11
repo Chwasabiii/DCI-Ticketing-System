@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addBusinessDays, calculateTicketPriority, formatDateTime, formatTicketCount, getTicketSlaIndicators } from "./utils";
+import { addBusinessDays, addBusinessSeconds, calculateTicketPriority, formatDateTime, formatTicketCount, getTicketResolutionDueLabel, getTicketSlaIndicators } from "./utils";
 
 describe("ticket timestamp formatting", () => {
   it("displays UTC timestamps in the app timezone and labels that timezone", () => {
@@ -37,10 +37,74 @@ describe("calculateTicketPriority", () => {
   });
 });
 
-describe("business-day SLA calculations", () => {
-  it("skips weekends when adding business days", () => {
+describe("office-hours SLA calculations", () => {
+  it("counts a business day as eight hours from the next office opening", () => {
+    const mondayOpening = Date.parse("2026-11-09T01:00:00.000Z");
+    expect(new Date(addBusinessDays(mondayOpening, 1)).toISOString()).toBe("2026-11-09T09:00:00.000Z");
+  });
+
+  it("starts before-hours tickets at 9 a.m. Manila time", () => {
+    const beforeOpening = Date.parse("2026-11-09T00:00:00.000Z");
+    expect(new Date(addBusinessSeconds(beforeOpening, 60 * 60)).toISOString()).toBe("2026-11-09T02:00:00.000Z");
+  });
+
+  it("carries remaining business time into the next workday", () => {
+    const afternoon = Date.parse("2026-11-09T08:00:00.000Z");
+    expect(new Date(addBusinessSeconds(afternoon, 2 * 60 * 60)).toISOString()).toBe("2026-11-10T02:00:00.000Z");
+  });
+
+  it("starts after-hours tickets at the next weekday opening", () => {
     const friday = Date.parse("2026-11-06T09:00:00.000Z");
     expect(new Date(addBusinessDays(friday, 1)).toISOString()).toBe("2026-11-09T09:00:00.000Z");
+  });
+
+  it("starts weekend tickets at Monday 9 a.m. Manila time", () => {
+    const saturday = Date.parse("2026-11-07T04:00:00.000Z");
+    expect(new Date(addBusinessSeconds(saturday, 60 * 60)).toISOString()).toBe("2026-11-09T02:00:00.000Z");
+  });
+
+  it("skips configured holiday dates when adding office hours", () => {
+    const fridayAfternoon = Date.parse("2026-11-06T08:00:00.000Z");
+    const holidays = ["2026-11-09"];
+    expect(new Date(addBusinessSeconds(fridayAfternoon, 2 * 60 * 60, holidays)).toISOString())
+      .toBe("2026-11-10T02:00:00.000Z");
+  });
+
+  it("moves a deadline that starts on a holiday to the next working day", () => {
+    const holidayMorning = Date.parse("2026-11-09T01:00:00.000Z");
+    expect(new Date(addBusinessDays(holidayMorning, 1, ["2026-11-09"])).toISOString())
+      .toBe("2026-11-10T09:00:00.000Z");
+  });
+
+  it("uses configured holidays for the requester-facing resolution label", () => {
+    const ticket = {
+      priority: "high",
+      status: "in_progress",
+      created_at: "2026-11-06T08:00:00.000Z",
+      reopened_at: null,
+      resolved_at: null,
+      ccg_request_type: null,
+      ccg_stage_due_at: null
+    } as const;
+    const policies = [{
+      priority_group: "high",
+      first_response_business_days: 1,
+      resolution_business_days: 1,
+      holiday_dates: ["2026-11-09"]
+    }] as const;
+
+    expect(getTicketResolutionDueLabel(ticket, [...policies], Date.parse("2026-11-10T07:59:00.000Z")))
+      .toBe("Due today");
+  });
+
+  it("keeps the exact 5 p.m. boundary at the end of the current workday", () => {
+    const mondayAfternoon = Date.parse("2026-11-09T08:00:00.000Z");
+    expect(new Date(addBusinessSeconds(mondayAfternoon, 60 * 60)).toISOString()).toBe("2026-11-09T09:00:00.000Z");
+  });
+
+  it("subtracts business time across evenings and weekends", () => {
+    const mondayOpening = Date.parse("2026-11-09T01:00:00.000Z");
+    expect(new Date(addBusinessSeconds(mondayOpening, -60 * 60)).toISOString()).toBe("2026-11-06T08:00:00.000Z");
   });
 
   it("reports both missed response and resolution targets", () => {
@@ -63,6 +127,30 @@ describe("business-day SLA calculations", () => {
     }] as const;
 
     expect(getTicketSlaIndicators(ticket, [...policies], Date.parse("2026-11-10T10:00:00.000Z")).map(({ key }) => key))
+      .toEqual(["response", "resolution"]);
+  });
+
+  it("starts SLA warnings after 75 percent of office time has elapsed", () => {
+    const ticket = {
+      id: 1,
+      title: "Test ticket",
+      priority: "high",
+      status: "in_progress",
+      created_at: "2026-11-09T01:00:00.000Z",
+      reopened_at: null,
+      resolved_at: null,
+      ccg_request_type: null,
+      ccg_stage_due_at: null,
+      first_response_at: null
+    } as const;
+    const policies = [{
+      priority_group: "high",
+      first_response_business_days: 1,
+      resolution_business_days: 1
+    }] as const;
+
+    expect(getTicketSlaIndicators(ticket, [...policies], Date.parse("2026-11-09T06:59:59.000Z"))).toEqual([]);
+    expect(getTicketSlaIndicators(ticket, [...policies], Date.parse("2026-11-09T07:00:00.000Z")).map(({ key }) => key))
       .toEqual(["response", "resolution"]);
   });
 

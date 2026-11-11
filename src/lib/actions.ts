@@ -1370,6 +1370,79 @@ export async function saveTicketSlaPolicies(formData: FormData) {
   return { success: "SLA targets saved." };
 }
 
+export async function saveTicketSlaHoliday(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to manage SLA holidays." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if (actor.error) return { error: actor.error };
+  if (actor.profile.user_side !== "admin") return { error: "Only administrators can manage SLA holidays." };
+
+  const holidayDate = value(formData, "holiday_date");
+  const name = value(formData, "name");
+  const parsedDate = holidayDate && /^\d{4}-\d{2}-\d{2}$/.test(holidayDate)
+    ? new Date(`${holidayDate}T00:00:00Z`)
+    : null;
+  if (!parsedDate || !Number.isFinite(parsedDate.getTime())
+    || parsedDate.toISOString().slice(0, 10) !== holidayDate
+    || !name || name.length > 120) {
+    return { error: "Enter a valid holiday date and a name up to 120 characters." };
+  }
+
+  const { error } = await supabase.from("ticket_sla_holidays")
+    .upsert({ holiday_date: holidayDate, name }, { onConflict: "holiday_date" });
+  if (error) return { error: `SLA holiday could not be saved: ${error.message}` };
+
+  revalidatePath("/admin/sla");
+  revalidatePath("/dashboard");
+  revalidatePath("/tickets");
+  revalidatePath("/assigned");
+  revalidatePath("/queue");
+  revalidatePath("/inbox");
+  revalidatePath("/overdue");
+  revalidatePath("/reports");
+  revalidatePath("/performance");
+  revalidatePath("/cost-control");
+  revalidatePath("/it-support");
+  revalidatePath("/api/ticket-report.csv");
+  return { success: "SLA holiday saved." };
+}
+
+export async function deleteTicketSlaHoliday(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Sign in as an administrator to manage SLA holidays." };
+  const actor = await getActiveTicketActor(supabase, user.id);
+  if (actor.error) return { error: actor.error };
+  if (actor.profile.user_side !== "admin") return { error: "Only administrators can manage SLA holidays." };
+
+  const holidayDate = value(formData, "holiday_date");
+  const parsedDate = holidayDate && /^\d{4}-\d{2}-\d{2}$/.test(holidayDate)
+    ? new Date(`${holidayDate}T00:00:00Z`)
+    : null;
+  if (!parsedDate || !Number.isFinite(parsedDate.getTime())
+    || parsedDate.toISOString().slice(0, 10) !== holidayDate) {
+    return { error: "Choose a valid SLA holiday date." };
+  }
+
+  const { error } = await supabase.from("ticket_sla_holidays").delete().eq("holiday_date", holidayDate);
+  if (error) return { error: `SLA holiday could not be removed: ${error.message}` };
+
+  revalidatePath("/admin/sla");
+  revalidatePath("/dashboard");
+  revalidatePath("/tickets");
+  revalidatePath("/assigned");
+  revalidatePath("/queue");
+  revalidatePath("/inbox");
+  revalidatePath("/overdue");
+  revalidatePath("/reports");
+  revalidatePath("/performance");
+  revalidatePath("/cost-control");
+  revalidatePath("/it-support");
+  revalidatePath("/api/ticket-report.csv");
+  return { success: "SLA holiday removed." };
+}
+
 export async function saveCcgBusinessHoliday(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
