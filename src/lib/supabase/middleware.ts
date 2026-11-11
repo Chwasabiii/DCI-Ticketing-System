@@ -1,8 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createTimedSupabaseFetch, sanitizeTimingRoute } from "@/lib/supabase/timing";
 
 export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const buildResponse = () => {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-performance-route", request.nextUrl.pathname);
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  };
+  let response = buildResponse();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,19 +20,27 @@ export async function updateSession(request: NextRequest) {
         },
         set(name: string, value: string, options: CookieOptions) {
           request.cookies.set({ name, value, ...options });
-          response = NextResponse.next({ request });
+          response = buildResponse();
           response.cookies.set({ name, value, ...options });
         },
         remove(name: string, options: CookieOptions) {
           request.cookies.set({ name, value: "", ...options });
-          response = NextResponse.next({ request });
+          response = buildResponse();
           response.cookies.set({ name, value: "", ...options });
         }
+      },
+      global: {
+        fetch: createTimedSupabaseFetch(() => request.nextUrl.pathname)
       }
     }
   );
 
+  const authStartedAt = performance.now();
   const { data, error } = await supabase.auth.getClaims();
+  const authDurationMs = Math.round(performance.now() - authStartedAt);
+  console.log(
+    `[supabase-timing] route=${sanitizeTimingRoute(request.nextUrl.pathname)} query=middleware.auth-check duration_ms=${authDurationMs}${authDurationMs > 200 ? " SLOW" : ""}`
+  );
   const claims = data?.claims;
   const isAuthenticated = !error && typeof claims?.sub === "string";
 

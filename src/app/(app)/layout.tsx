@@ -7,6 +7,7 @@ import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { OnboardingTips } from "@/components/layout/onboarding-tips";
 import { getCurrentContext, getNotifications, getUnreadNotificationCount } from "@/lib/data";
 import { getNavItems } from "@/lib/navigation";
+import { measureTiming } from "@/lib/supabase/timing";
 
 export default async function AppLayout({
   children
@@ -14,7 +15,7 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const [{ profile, roleNames }, notifications, unreadNotificationCount, cookieStore] = await Promise.all([
-    getCurrentContext(),
+    measureTiming("/(app)/layout", "layout.auth-profile-check", getCurrentContext),
     getNotifications(5),
     getUnreadNotificationCount(),
     cookies()

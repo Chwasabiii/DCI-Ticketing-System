@@ -4,9 +4,13 @@ import { Plus } from "lucide-react";
 import { TicketWorkloadView } from "@/components/tickets/ticket-workload-view";
 import { getCurrentProfile, getTicketSlaPolicies, getTickets } from "@/lib/data";
 import { TicketDraftsList } from "@/components/tickets/ticket-drafts-list";
+import { measureTiming } from "@/lib/supabase/timing";
 
 async function TicketWorkloadSection({ currentUserId, canCreateTickets }: { currentUserId?: string; canCreateTickets: boolean }) {
-  const [tickets, slaPolicies] = await Promise.all([getTickets(100), getTicketSlaPolicies()]);
+  const [tickets, slaPolicies] = await Promise.all([
+    measureTiming("/tickets", "tickets.list", () => getTickets(100)),
+    measureTiming("/tickets", "tickets.sla-policies", getTicketSlaPolicies)
+  ]);
   return <TicketWorkloadView tickets={tickets} currentUserId={currentUserId} slaPolicies={slaPolicies} canCreateTickets={canCreateTickets} />;
 }
 
@@ -29,7 +33,7 @@ function TicketWorkloadSkeleton() {
 }
 
 export default async function TicketsPage() {
-  const profile = await getCurrentProfile();
+  const profile = await measureTiming("/tickets", "tickets.auth-profile-check", getCurrentProfile);
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-5">

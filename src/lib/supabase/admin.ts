@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
+import { getServerTimedFetch } from "@/lib/supabase/timing.server";
 
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,6 +14,7 @@ export function createAdminClient() {
     auth: {
       autoRefreshToken: false,
       persistSession: false
-    }
+    },
+    global: { fetch: getServerTimedFetch() }
   });
 }

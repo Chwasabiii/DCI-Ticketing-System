@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { getSupabaseConfig } from "@/lib/env";
+import { getServerTimedFetch } from "@/lib/supabase/timing.server";
 
 export async function createClient() {
   const cookieStore = await cookies();
@@ -25,6 +26,7 @@ export async function createClient() {
           // Server Components cannot set cookies. Middleware refreshes sessions.
         }
       }
-    }
+    },
+    global: { fetch: getServerTimedFetch() }
   });
 }

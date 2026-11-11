@@ -9,13 +9,14 @@ import {
   getTicketSlaPolicies
 } from "@/lib/data";
 import { allDepartmentsConfig, getServiceDepartmentConfig } from "@/lib/service-departments";
+import { measureTiming } from "@/lib/supabase/timing";
 
 type DashboardPageProps = {
   searchParams: Promise<{ team?: string }>;
 };
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const { profile } = await getCurrentContext();
+  const { profile } = await measureTiming("/dashboard", "dashboard.auth-profile-check", getCurrentContext);
   if (!profile) redirect("/login");
 
   if (profile.user_side === "client") {
@@ -24,8 +25,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     let loadError: string | null = null;
     try {
       [tickets, slaPolicies] = await Promise.all([
-        getDashboardTickets(),
-        getTicketSlaPolicies()
+        measureTiming("/dashboard", "dashboard.tickets", getDashboardTickets),
+        measureTiming("/dashboard", "dashboard.sla-policies", getTicketSlaPolicies)
       ]);
     } catch (error) {
       loadError = error instanceof Error ? error.message : "An unexpected error occurred.";
@@ -42,7 +43,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const params = await searchParams;
   const isAdmin = profile.user_side === "admin";
-  const teams = isAdmin ? await getServiceTeams() : [];
+  const teams = isAdmin
+    ? await measureTiming("/dashboard", "dashboard.service-teams", getServiceTeams)
+    : [];
   const requestedTeamId = isAdmin && params.team && /^\d+$/.test(params.team)
     ? Number(params.team)
     : null;
@@ -55,9 +58,9 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     : profile.service_team_id ?? -1;
 
   const [tickets, slaPolicies, metrics] = await Promise.all([
-    getDashboardTickets(serviceTeamId),
-    getTicketSlaPolicies(),
-    getServiceDashboardMetrics(serviceTeamId)
+    measureTiming("/dashboard", "dashboard.tickets", () => getDashboardTickets(serviceTeamId)),
+    measureTiming("/dashboard", "dashboard.sla-policies", getTicketSlaPolicies),
+    measureTiming("/dashboard", "dashboard.metrics", () => getServiceDashboardMetrics(serviceTeamId))
   ]);
   const department = isAdmin
     ? selectedTeam
