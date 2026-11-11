@@ -9,6 +9,7 @@ import { TicketActivityTimeline } from "@/components/tickets/ticket-activity-tim
 import { TicketHandoffForm } from "@/components/tickets/ticket-handoff-form";
 import { RelatedTickets } from "@/components/tickets/related-tickets";
 import { TicketSatisfactionSurvey } from "@/components/tickets/ticket-satisfaction-survey";
+import { TicketFeedbackDisplay } from "@/components/tickets/ticket-feedback-display";
 import { CcgTicketStatusBar } from "@/components/tickets/ccg-ticket-status-bar";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -405,6 +406,10 @@ export default async function TicketDetailPage({
         {context.profile.user_side === "client" && ticket.requester_id === context.profile.id && ["resolved", "closed"].includes(ticket.status) && (
           <TicketSatisfactionSurvey ticketId={String(ticket.id)} feedback={feedback} />
         )}
+        {(context.profile.user_side === "employee" || context.profile.user_side === "admin")
+          && ["resolved", "closed"].includes(ticket.status) && (
+            <TicketFeedbackDisplay feedback={feedback} />
+          )}
       </section>
       {showHandoff && <TicketHandoffForm ticketId={String(ticket.id)} employees={routeOptions.people} />}
       </div>
