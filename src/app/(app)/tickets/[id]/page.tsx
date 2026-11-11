@@ -6,7 +6,6 @@ import { TicketQueueActions } from "@/components/tickets/ticket-queue-actions";
 import { TicketPriorityReview } from "@/components/tickets/ticket-priority-review";
 import { AttachmentUploader } from "@/components/tickets/attachment-uploader";
 import { TicketActivityTimeline } from "@/components/tickets/ticket-activity-timeline";
-import { TicketHandoffForm } from "@/components/tickets/ticket-handoff-form";
 import { RelatedTickets } from "@/components/tickets/related-tickets";
 import { TicketSatisfactionSurvey } from "@/components/tickets/ticket-satisfaction-survey";
 import { TicketFeedbackDisplay } from "@/components/tickets/ticket-feedback-display";
@@ -150,9 +149,6 @@ export default async function TicketDetailPage({
         || context.roleNames.includes("Personnel")
         || context.roleNames.includes("Coordinator")));
 
-  const showHandoff =
-    (context.profile.user_side === "admin" || context.roleNames.includes("Coordinator")) &&
-    !["resolved", "closed", "rejected"].includes(ticket.status);
   const canViewTicketActions = context.profile.user_side === "admin"
     || (context.profile.user_side === "employee"
       && context.profile.service_team_id === ticket.service_team_id
@@ -181,7 +177,7 @@ export default async function TicketDetailPage({
         <ArrowLeft className="h-4 w-4" />
         {ticketListLabel}
       </Link>
-      <div className={`grid items-start gap-6 ${showHandoff ? "xl:grid-cols-[minmax(0,1fr)_360px]" : "grid-cols-1"}`}>
+      <div className="grid grid-cols-1 items-start gap-6">
       <section className="space-y-5">
         {isCcgTicket && <CcgTicketStatusBar ticket={ticket} />}
         <div className={`grid items-stretch gap-5 ${canViewTicketActions || canUseQuickActions ? "xl:grid-cols-[minmax(0,1fr)_340px]" : "grid-cols-1"}`}>
@@ -411,7 +407,6 @@ export default async function TicketDetailPage({
             <TicketFeedbackDisplay feedback={feedback} />
           )}
       </section>
-      {showHandoff && <TicketHandoffForm ticketId={String(ticket.id)} employees={routeOptions.people} />}
       </div>
     </div>
   );
