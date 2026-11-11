@@ -4,37 +4,45 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  BookOpen,
   Bell,
-  ClipboardList,
+  Calculator,
   Clock3,
   CircleHelp,
   FileBarChart,
+  Gauge,
   Home,
   Inbox,
   PlusCircle,
   Shield,
+  Ticket,
   Users,
   Workflow
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { isNavItemActive, type NavIcon, type NavItem } from "@/lib/navigation";
+import type { UserSide } from "@/lib/types";
 
 const icons: Record<NavIcon, typeof Home> = {
   "bar-chart": BarChart3,
   bell: Bell,
-  clipboard: ClipboardList,
+  book: BookOpen,
+  calculator: Calculator,
   clock: Clock3,
   "file-chart": FileBarChart,
+  gauge: Gauge,
   home: Home,
+  help: CircleHelp,
   inbox: Inbox,
   plus: PlusCircle,
   shield: Shield,
+  ticket: Ticket,
   users: Users,
   workflow: Workflow
 };
 
-export function Sidebar({ items }: { items: NavItem[] }) {
+export function Sidebar({ items, userSide }: { items: NavItem[]; userSide: UserSide }) {
   const pathname = usePathname();
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -74,17 +82,10 @@ export function Sidebar({ items }: { items: NavItem[] }) {
           aria-hidden={!expanded}
           className={cn(
             "overflow-hidden whitespace-nowrap transition-[max-width,transform] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-            expanded
-              ? "max-w-40 translate-x-0"
-              : "max-w-0 translate-x-1"
+            expanded ? "max-w-40 translate-x-0" : "max-w-0 translate-x-1"
           )}
         >
-          <div
-            className={cn(
-              "transition-opacity motion-reduce:transition-none",
-              expanded ? "delay-75 duration-200 opacity-100" : "duration-100 opacity-0"
-            )}
-          >
+          <div className={cn("transition-opacity motion-reduce:transition-none", expanded ? "delay-75 duration-200 opacity-100" : "duration-100 opacity-0")}>
             <p className="text-sm font-bold tracking-tight text-navy">PMSG Desk</p>
             <p className="mt-0.5 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">Support center</p>
           </div>
@@ -98,12 +99,7 @@ export function Sidebar({ items }: { items: NavItem[] }) {
             expanded ? "mb-3 max-h-5" : "mb-0 max-h-0"
           )}
         >
-          <span
-            className={cn(
-              "inline-block transition-opacity motion-reduce:transition-none",
-              expanded ? "delay-75 duration-200 opacity-100" : "duration-100 opacity-0"
-            )}
-          >
+          <span className={cn("inline-block transition-opacity motion-reduce:transition-none", expanded ? "delay-75 duration-200 opacity-100" : "duration-100 opacity-0")}>
             Workspace
           </span>
         </p>
@@ -137,17 +133,10 @@ export function Sidebar({ items }: { items: NavItem[] }) {
                 aria-hidden={!expanded}
                 className={cn(
                   "overflow-hidden whitespace-nowrap transition-[max-width,transform] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-                  expanded
-                    ? "max-w-44 translate-x-0"
-                    : "max-w-0 translate-x-1"
+                  expanded ? "max-w-44 translate-x-0" : "max-w-0 translate-x-1"
                 )}
               >
-                <span
-                  className={cn(
-                    "inline-block transition-opacity motion-reduce:transition-none",
-                    expanded ? "delay-75 duration-200 opacity-100" : "duration-100 opacity-0"
-                  )}
-                >
+                <span className={cn("inline-block transition-opacity motion-reduce:transition-none", expanded ? "delay-75 duration-200 opacity-100" : "duration-100 opacity-0")}>
                   {item.label}
                 </span>
               </span>
@@ -155,29 +144,26 @@ export function Sidebar({ items }: { items: NavItem[] }) {
           );
         })}
       </nav>
-      <div
-        aria-hidden={!expanded}
-        className={cn(
-          "mx-3 overflow-hidden rounded-xl bg-slate-50 transition-[max-height,margin,padding] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
-          expanded ? "mb-3 max-h-40 p-3.5" : "mb-0 max-h-0 p-0"
-        )}
-      >
+      {userSide === "client" && (
         <div
+          aria-hidden={!expanded}
           className={cn(
-            "transition-opacity motion-reduce:transition-none",
-            expanded ? "delay-75 duration-200 opacity-100" : "duration-100 opacity-0"
+            "mx-3 overflow-hidden rounded-xl bg-slate-50 transition-[max-height,margin,padding] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+            expanded ? "mb-3 max-h-40 p-3.5" : "mb-0 max-h-0 p-0"
           )}
         >
-          <div className="flex items-center gap-2 text-sm font-semibold text-navy">
-            <CircleHelp className="h-4 w-4 text-accent" />
-            Need a hand?
+          <div className={cn("transition-opacity motion-reduce:transition-none", expanded ? "delay-75 duration-200 opacity-100" : "duration-100 opacity-0")}>
+            <div className="flex items-center gap-2 text-sm font-semibold text-navy">
+              <CircleHelp className="h-4 w-4 text-accent" />
+              Need a hand?
+            </div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Find answers in the support guide.</p>
+            <Link href="/faqs" className="mt-2 inline-flex text-xs font-bold text-accent hover:underline">
+              Browse FAQs
+            </Link>
           </div>
-          <p className="mt-1 text-xs leading-5 text-slate-500">Find answers in the support guide.</p>
-          <Link href="/faqs" className="mt-2 inline-flex text-xs font-bold text-accent hover:underline">
-            Browse FAQs
-          </Link>
         </div>
-      </div>
+      )}
     </aside>
   );
 }

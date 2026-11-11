@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { Send } from "lucide-react";
 import { inviteUser } from "@/lib/actions";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
@@ -125,11 +126,14 @@ export function InviteUserForm({
         )}
         {error && <div className="md:col-span-2"><FeedbackMessage type="error">{error}</FeedbackMessage></div>}
         {message && <div className="md:col-span-2"><FeedbackMessage type="success">{message}</FeedbackMessage></div>}
-        <div className="md:col-span-2">
+        <div className="flex flex-wrap gap-3 md:col-span-2">
           <Button type="submit" loading={submitting} className="bg-navy hover:bg-[#163b68]">
             <Send className="h-4 w-4" />
             {submitting ? "Sending invitation..." : "Send invitation"}
           </Button>
+          <Link href="/admin/users/import" className="focus-ring inline-flex min-h-11 items-center rounded-lg border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Import users
+          </Link>
         </div>
       </form>
     </section>

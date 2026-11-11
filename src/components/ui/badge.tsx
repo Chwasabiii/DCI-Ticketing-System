@@ -60,7 +60,7 @@ export function StatusBadge({ value }: { value?: string | null }) {
 
   return (
     <span     className={cn(
-      "inline-flex rounded-control border px-1.5 py-0.5 text-xs font-medium leading-4",
+      "inline-flex rounded-sm border px-1.5 py-0.5 text-xs font-medium leading-4",
       ticketStatusStyles[normalized] ?? "border-border bg-page text-muted"
     )}>
       {titleCase(normalized)}
@@ -76,7 +76,7 @@ export function PriorityBadge({ value }: { value?: string | null }) {
     : "border-priority-medium/20 bg-priority-medium-bg text-priority-medium";
 
   return (
-    <span     className={cn("inline-flex rounded-control border px-1.5 py-0.5 text-xs font-medium leading-4", styles)}>
+    <span className={cn("inline-flex rounded-sm border px-1.5 py-0.5 text-xs font-medium leading-4", styles)}>
       {titleCase(normalized)}
     </span>
   );

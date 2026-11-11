@@ -299,6 +299,50 @@ export async function inviteUser(formData: FormData) {
   return { success: `Invitation sent to ${email}.` };
 }
 
+export async function resendUserInvitation(userId: string) {
+  const context = await getAdminMutationContext();
+  if ("error" in context) return { error: context.error };
+  if (!isUuid(userId)) return { error: "The account ID is invalid." };
+
+  const { data: profile, error: profileError } = await context.adminClient
+    .from("profiles")
+    .select("id, email, full_name, invitation_pending, status")
+    .eq("id", userId)
+    .maybeSingle();
+  if (profileError) return { error: `Could not load the account: ${profileError.message}` };
+  if (!profile?.email || !profile.invitation_pending) {
+    return { error: "This account does not have a pending invitation." };
+  }
+  if (profile.status !== "active") return { error: "Restore this account before resending its invitation." };
+
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+    ?? (process.env.NODE_ENV === "development" ? "http://localhost:3000" : null);
+  if (!configuredSiteUrl) {
+    return { error: "Set NEXT_PUBLIC_SITE_URL to this app's public URL before sending invitations." };
+  }
+
+  let siteUrl: string;
+  try {
+    const parsedSiteUrl = new URL(configuredSiteUrl);
+    if (!["http:", "https:"].includes(parsedSiteUrl.protocol) || parsedSiteUrl.username || parsedSiteUrl.password) {
+      return { error: "NEXT_PUBLIC_SITE_URL must be a valid http or https app URL." };
+    }
+    siteUrl = parsedSiteUrl.origin;
+  } catch {
+    return { error: "NEXT_PUBLIC_SITE_URL must be a valid http or https app URL." };
+  }
+
+  const { data: invitation, error: invitationError } = await context.adminClient.auth.admin.inviteUserByEmail(profile.email, {
+    data: { full_name: profile.full_name ?? "" },
+    redirectTo: `${siteUrl}/auth/callback`
+  });
+  if (invitationError || invitation.user?.id !== profile.id) {
+    return { error: invitationError?.message ?? "Supabase did not resend the invitation for this account." };
+  }
+  revalidatePath("/admin/users");
+  return { success: `Invitation resent to ${profile.email}.` };
+}
+
 export async function verifyInvitation(formData: FormData) {
   const tokenHash = value(formData, "token_hash");
   if (!tokenHash || tokenHash.length > 2048) {

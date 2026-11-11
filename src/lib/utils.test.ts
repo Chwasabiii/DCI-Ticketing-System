@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addBusinessDays, calculateTicketPriority, formatDateTime, getTicketSlaIndicators } from "./utils";
+import { addBusinessDays, calculateTicketPriority, formatDateTime, formatTicketCount, getTicketSlaIndicators } from "./utils";
 
 describe("ticket timestamp formatting", () => {
   it("displays UTC timestamps in the app timezone and labels that timezone", () => {
@@ -7,6 +7,17 @@ describe("ticket timestamp formatting", () => {
     expect(formatted).toContain("Nov 10, 2026");
     expect(formatted).toContain("4:38 PM");
     expect(formatted).toContain("GMT+8");
+  });
+});
+
+describe("ticket count labels", () => {
+  it("uses the singular form for one ticket", () => {
+    expect(formatTicketCount(1)).toBe("1 ticket");
+  });
+
+  it("uses the plural form for zero and multiple tickets", () => {
+    expect(formatTicketCount(0)).toBe("0 tickets");
+    expect(formatTicketCount(2)).toBe("2 tickets");
   });
 });
 

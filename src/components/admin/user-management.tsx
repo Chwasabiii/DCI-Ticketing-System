@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Users, UserCheck, UserX, X, ShieldCheck, LoaderCircle } from "lucide-react";
-import { deactivateUser, reactivateUser, updateManagedUser } from "@/lib/actions";
+import { deactivateUser, reactivateUser, resendUserInvitation, updateManagedUser } from "@/lib/actions";
 import { Badge } from "@/components/ui/badge";
 import { FeedbackMessage } from "@/components/ui/feedback-message";
 import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
@@ -133,6 +133,30 @@ export function UserManagement({
     await performAction(user.id, isActive ? deactivateUser : reactivateUser, formData);
   }
 
+  async function handleResendInvitation(user: ManagedProfile) {
+    if (!await confirm({
+      title: "Resend invitation?",
+      description: `Send a new invitation to ${user.email ?? "this user"}?`,
+      confirmLabel: "Resend invitation"
+    })) return;
+
+    setBusyId(user.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await resendUserInvitation(user.id);
+      if (result.error) setError(result.error);
+      else {
+        setNotice(result.success ?? "Invitation resent.");
+        router.refresh();
+      }
+    } catch {
+      setError("The invitation could not be resent. Please try again.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <section className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
@@ -247,6 +271,11 @@ export function UserManagement({
                   <td className="px-4 py-4"><Badge value={isActive ? "active" : "inactive"} /></td>
                   <td className="min-w-44 px-4 py-4">
                     <div className="flex flex-wrap gap-2">
+                      {user.invitation_pending && isActive && (
+                        <button type="button" onClick={() => void handleResendInvitation(user)} disabled={busyId === user.id} className="focus-ring min-h-9 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                          {busyId === user.id ? "Sending..." : "Resend invite"}
+                        </button>
+                      )}
                       {!isSelf && (
                         <button type="button" onClick={() => { setEditing(user); setError(null); setNotice(null); }} disabled={busyId === user.id} className="focus-ring min-h-9 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                           Edit

@@ -10,6 +10,7 @@ import type {
   Profile,
   ProfileSummary,
   ServiceTeam,
+  ServiceDashboardMetrics,
   RelatedTicket,
   TicketAttachment,
   TicketActivity,
@@ -110,7 +111,7 @@ export async function getTickets(limit = 50) {
 
 const queueTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, is_confidential, assigned_to, due_date, created_at, reopened_at, resolved_at, first_response_at, resolution_notes";
 
-const dashboardTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, is_confidential, request_type, service_category, ccg_request_type, ccg_stage_due_at, due_date, created_at, reopened_at, resolved_at, service_team_id";
+const dashboardTicketSelection = "id, ticket_no, title, status, priority, is_confidential, request_type, service_category, ccg_request_type, ccg_request_types, ccg_stage_due_at, due_date, created_at, updated_at, reopened_at, resolved_at, first_response_at, requester_id, requester:profiles!tickets_requester_id_fkey(id, full_name, email), assigned_to, assignee:profiles!tickets_assigned_to_fkey(id, full_name, email), service_team_id";
 
 const performanceTicketSelection = "status, priority, assigned_to, first_response_at, resolved_at, created_at, reopened_at, due_date, ccg_request_type, ccg_stage_due_at, ccg_vendor_due_at, ccg_vendor_expected_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds";
 const reportSummarySelection = "status, priority, created_at, first_response_at, reopened_at, resolved_at, service_team_id, ccg_request_type, ccg_stage_due_at";
@@ -165,6 +166,43 @@ async function getPagedTickets(selection: string, serviceTeamId?: number, create
 
 export async function getDashboardTickets(serviceTeamId?: number) {
   return getPagedTickets(dashboardTicketSelection, serviceTeamId);
+}
+
+function isServiceDashboardMetrics(value: unknown): value is ServiceDashboardMetrics {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const metrics = value as Record<string, unknown>;
+  const countFields = [
+    "total",
+    "open_total",
+    "unassigned",
+    "assigned_to_me",
+    "overdue",
+    "awaiting_user",
+    "resolved_this_week"
+  ];
+  const categories = metrics.categories;
+  return countFields.every((field) => typeof metrics[field] === "number")
+    && (metrics.average_first_response_hours === null || typeof metrics.average_first_response_hours === "number")
+    && (metrics.average_resolution_days === null || typeof metrics.average_resolution_days === "number")
+    && Array.isArray(categories)
+    && categories.every((category: unknown) => category
+      && typeof category === "object"
+      && !Array.isArray(category)
+      && typeof (category as Record<string, unknown>).category === "string"
+      && typeof (category as Record<string, unknown>).count === "number");
+}
+
+export async function getServiceDashboardMetrics(serviceTeamId?: number): Promise<ServiceDashboardMetrics> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_service_dashboard_metrics", {
+    p_service_team_id: serviceTeamId ?? null
+  });
+  if (error) throw new Error(`Could not load service dashboard metrics: ${error.message}`);
+  const result: unknown = Array.isArray(data) ? data[0] : data;
+  if (!isServiceDashboardMetrics(result)) {
+    throw new Error("Could not load service dashboard metrics: the database returned an invalid result.");
+  }
+  return result;
 }
 
 export async function getTeamTickets(serviceTeamId: number) {

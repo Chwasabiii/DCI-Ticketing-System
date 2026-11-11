@@ -4,14 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  BookOpen,
   Bell,
-  ClipboardList,
+  Calculator,
   Clock3,
   FileBarChart,
+  Gauge,
   Home,
   Inbox,
   PlusCircle,
   Shield,
+  CircleHelp,
+  Ticket,
   Users,
   Workflow
 } from "lucide-react";
@@ -22,13 +26,17 @@ import { MoreHorizontal, X } from "lucide-react";
 const icons: Record<NavIcon, typeof Home> = {
   "bar-chart": BarChart3,
   bell: Bell,
-  clipboard: ClipboardList,
+  book: BookOpen,
+  calculator: Calculator,
   clock: Clock3,
   "file-chart": FileBarChart,
+  gauge: Gauge,
   home: Home,
+  help: CircleHelp,
   inbox: Inbox,
   plus: PlusCircle,
   shield: Shield,
+  ticket: Ticket,
   users: Users,
   workflow: Workflow
 };

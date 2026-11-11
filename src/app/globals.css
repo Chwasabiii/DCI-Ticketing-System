@@ -8,7 +8,7 @@
   --color-neutral-100: #f1f3f5;
   --color-neutral-200: #e2e5e9;
   --color-neutral-400: #98a2b3;
-  --color-neutral-600: #667085;
+  --color-neutral-600: #475467;
   --color-neutral-800: #344054;
   --color-neutral-900: #20252b;
   --color-info: #2459b3;
@@ -27,7 +27,7 @@
   --color-surface: #ffffff;
   --color-border: #e2e5e9;
   --color-ink: #20252b;
-  --color-muted: #667085;
+  --color-muted: #475467;
   --color-resolved: #16805d;
   --color-warning: #d38a1f;
   --color-urgent: #d34c58;
@@ -76,6 +76,8 @@ body {
   background: var(--color-page);
   color: #1b2940;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 400;
+  letter-spacing: normal;
   -webkit-font-smoothing: antialiased;
 }
 

@@ -197,3 +197,7 @@ export function titleCase(value?: string | null) {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 }
+
+export function formatTicketCount(count: number) {
+  return `${count} ${count === 1 ? "ticket" : "tickets"}`;
+}

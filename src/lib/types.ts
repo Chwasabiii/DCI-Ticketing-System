@@ -135,6 +135,19 @@ export type TicketSlaPolicy = {
   updated_at?: string;
 };
 
+export type ServiceDashboardMetrics = {
+  total: number;
+  open_total: number;
+  unassigned: number;
+  assigned_to_me: number;
+  overdue: number;
+  awaiting_user: number;
+  resolved_this_week: number;
+  average_first_response_hours: number | null;
+  average_resolution_days: number | null;
+  categories: Array<{ category: string; count: number }>;
+};
+
 export type BusinessHoliday = {
   holiday_date: string;
   name: string;
