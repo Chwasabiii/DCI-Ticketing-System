@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { getSiteOrigin } from "@/lib/site-url";
 import { parseBulkUserFile } from "@/lib/bulk-user-import-server";
 import {
   validateBulkUserRows,
@@ -117,22 +118,6 @@ function parseClientRows(value: unknown): BulkUserInputRow[] | null {
   return result;
 }
 
-function validSiteUrl() {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL
-    ?? (process.env.NODE_ENV === "development" ? "http://localhost:3000" : null);
-  if (!configured) throw new Error("Set NEXT_PUBLIC_SITE_URL to this app's public URL before sending invitations.");
-  let url: URL;
-  try {
-    url = new URL(configured);
-  } catch {
-    throw new Error("NEXT_PUBLIC_SITE_URL must be a valid http or https app URL.");
-  }
-  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) {
-    throw new Error("NEXT_PUBLIC_SITE_URL must be a valid http or https app URL.");
-  }
-  return url.origin;
-}
-
 async function recordItem(
   supabase: Awaited<ReturnType<typeof createClient>>,
   runId: string,
@@ -235,7 +220,7 @@ export async function processBulkUserImportBatch(runId: string, untrustedRows: u
 
   let siteUrl: string;
   try {
-    siteUrl = validSiteUrl();
+    siteUrl = getSiteOrigin();
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Invitation URL configuration is invalid." };
   }

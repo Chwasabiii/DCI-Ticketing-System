@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { calculateTicketPriority } from "@/lib/utils";
+import { getSiteOrigin } from "@/lib/site-url";
 import type {
   Comment,
   EmployeeRole,
@@ -221,26 +222,11 @@ export async function inviteUser(formData: FormData) {
     };
   }
 
-  const configuredSiteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    (process.env.NODE_ENV === "development" ? "http://localhost:3000" : null);
-  if (!configuredSiteUrl) {
-    return { error: "Set NEXT_PUBLIC_SITE_URL to this app's public URL before sending invitations." };
-  }
-
   let siteUrl: string;
   try {
-    const parsedSiteUrl = new URL(configuredSiteUrl);
-    if (
-      !["http:", "https:"].includes(parsedSiteUrl.protocol) ||
-      parsedSiteUrl.username ||
-      parsedSiteUrl.password
-    ) {
-      return { error: "NEXT_PUBLIC_SITE_URL must be a valid http or https app URL." };
-    }
-    siteUrl = parsedSiteUrl.origin;
-  } catch {
-    return { error: "NEXT_PUBLIC_SITE_URL must be a valid http or https app URL." };
+    siteUrl = getSiteOrigin();
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Invitation URL configuration is invalid." };
   }
 
   const { data: invitation, error: inviteError } =
@@ -315,21 +301,11 @@ export async function resendUserInvitation(userId: string) {
   }
   if (profile.status !== "active") return { error: "Restore this account before resending its invitation." };
 
-  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
-    ?? (process.env.NODE_ENV === "development" ? "http://localhost:3000" : null);
-  if (!configuredSiteUrl) {
-    return { error: "Set NEXT_PUBLIC_SITE_URL to this app's public URL before sending invitations." };
-  }
-
   let siteUrl: string;
   try {
-    const parsedSiteUrl = new URL(configuredSiteUrl);
-    if (!["http:", "https:"].includes(parsedSiteUrl.protocol) || parsedSiteUrl.username || parsedSiteUrl.password) {
-      return { error: "NEXT_PUBLIC_SITE_URL must be a valid http or https app URL." };
-    }
-    siteUrl = parsedSiteUrl.origin;
-  } catch {
-    return { error: "NEXT_PUBLIC_SITE_URL must be a valid http or https app URL." };
+    siteUrl = getSiteOrigin();
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Invitation URL configuration is invalid." };
   }
 
   const { data: invitation, error: invitationError } = await context.adminClient.auth.admin.inviteUserByEmail(profile.email, {

@@ -490,6 +490,8 @@ begin
 end $$;
 
 -- Tickets: client-users see only their own; employee-users and admins see all
+-- The baseline update policy is intentionally fail-closed until security migrations
+-- install the ticket permission guard.
 create policy "tickets read" on public.tickets for select to authenticated
   using (public.current_side() is not null
          and (requester_id = auth.uid() or public.current_side() in ('employee','admin')));
@@ -498,7 +500,8 @@ create policy "tickets requester read own" on public.tickets for select to authe
 create policy "tickets insert" on public.tickets for insert to authenticated
   with check (public.current_side() is not null and requester_id = auth.uid());
 create policy "tickets update" on public.tickets for update to authenticated
-  using (public.current_side() in ('employee','admin'));
+  using (public.current_side() = 'admin')
+  with check (public.current_side() = 'admin');
 
 -- Events: visible if the ticket is visible. No insert policy: only the trigger writes them
 create policy "events read" on public.ticket_events for select to authenticated
