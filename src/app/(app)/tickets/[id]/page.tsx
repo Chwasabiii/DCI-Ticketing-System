@@ -9,7 +9,7 @@ import { TicketActivityTimeline } from "@/components/tickets/ticket-activity-tim
 import { RelatedTickets } from "@/components/tickets/related-tickets";
 import { TicketSatisfactionSurvey } from "@/components/tickets/ticket-satisfaction-survey";
 import { TicketFeedbackDisplay } from "@/components/tickets/ticket-feedback-display";
-import { CcgTicketStatusBar } from "@/components/tickets/ccg-ticket-status-bar";
+import { TicketStatusBar } from "@/components/tickets/ticket-status-bar";
 import { Badge } from "@/components/ui/badge";
 import {
   getCurrentContext,
@@ -124,6 +124,7 @@ export default async function TicketDetailPage({
     && !context.roleNames.includes("Coordinator")
     && ticketIsActive;
   const isCcgTicket = ticket.service_team?.slug === "cost-control" && Boolean(ticket.ccg_request_type);
+  const isItTicket = ticket.service_team?.slug === "it-support";
   const canWorkCcgTicket = context.profile.user_side === "admin"
     || (context.profile.user_side === "employee"
       && context.profile.service_team_id === ticket.service_team_id
@@ -179,7 +180,8 @@ export default async function TicketDetailPage({
       </Link>
       <div className="grid grid-cols-1 items-start gap-6">
       <section className="space-y-5">
-        {isCcgTicket && <CcgTicketStatusBar ticket={ticket} />}
+        {isCcgTicket && <TicketStatusBar ticket={ticket} department="CCG" />}
+        {isItTicket && <TicketStatusBar ticket={ticket} department="IT Support" />}
         <div className={`grid items-stretch gap-5 ${canViewTicketActions || canUseQuickActions ? "xl:grid-cols-[minmax(0,1fr)_340px]" : "grid-cols-1"}`}>
         <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_30px_rgba(20,40,75,0.06)]">
           <div className="h-1.5 bg-gradient-to-r from-accent via-blue-400 to-indigo-300" />

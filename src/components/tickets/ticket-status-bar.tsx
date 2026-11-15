@@ -1,15 +1,6 @@
 import { Check, CircleCheck, ClipboardList, FileCheck2, Search, UserRound } from "lucide-react";
 import type { Ticket } from "@/lib/types";
 
-const stages = [
-  { label: "New request", icon: ClipboardList },
-  { label: "Assigned", icon: UserRound },
-  { label: "CCG review", icon: Search },
-  { label: "CCG work", icon: ClipboardList },
-  { label: "Response sent", icon: FileCheck2 },
-  { label: "Completed", icon: CircleCheck }
-];
-
 function getStageIndex(status: Ticket["status"]) {
   switch (status) {
     case "open":
@@ -31,32 +22,53 @@ function getStageIndex(status: Ticket["status"]) {
   }
 }
 
-function getStageDescription(ticket: Ticket) {
+function getStageDescription(ticket: Ticket, department: "CCG" | "IT Support") {
   if (ticket.status === "waiting_for_info") return "Waiting for information from the requester.";
   if (ticket.status === "rejected") return "This request was rejected.";
   if (ticket.status === "closed") return "The requester confirmed the response.";
-  if (ticket.status === "resolved") return "CCG sent a response. Waiting for requester confirmation.";
-  if (ticket.status === "in_progress" && ticket.ccg_followup_status === "pending") {
-    return "CCG work or vendor follow-up is in progress.";
+  if (ticket.status === "resolved") return `${department} sent a response. Waiting for requester confirmation.`;
+  if (ticket.status === "in_progress") {
+    if (department === "CCG" && ticket.ccg_followup_status === "pending") {
+      return "CCG work or vendor follow-up is in progress.";
+    }
+    return `${department} work is in progress.`;
   }
-  if (ticket.status === "under_review") return "CCG is reviewing the request and checking references.";
-  if (ticket.status === "assigned") return "The request has an owner and is awaiting CCG review.";
-  return "Your request has been submitted to CCG.";
+  if (ticket.status === "under_review") {
+    return department === "CCG"
+      ? "CCG is reviewing the request and checking references."
+      : "IT Support is reviewing the request.";
+  }
+  if (ticket.status === "assigned") return `The request has an owner and is awaiting ${department} review.`;
+  return `Your request has been submitted to ${department}.`;
 }
 
-export function CcgTicketStatusBar({ ticket }: { ticket: Ticket }) {
+export function TicketStatusBar({
+  ticket,
+  department
+}: {
+  ticket: Ticket;
+  department: "CCG" | "IT Support";
+}) {
+  const stages = [
+    { label: "New request", icon: ClipboardList },
+    { label: "Assigned", icon: UserRound },
+    { label: `${department} review`, icon: Search },
+    { label: `${department} work`, icon: ClipboardList },
+    { label: "Response sent", icon: FileCheck2 },
+    { label: "Completed", icon: CircleCheck }
+  ];
   const activeIndex = getStageIndex(ticket.status);
   const rejected = ticket.status === "rejected";
 
   return (
     <section
-      aria-label="CCG ticket progress"
+      aria-label={`${department} ticket progress`}
       className="mt-5 rounded-xl border border-emerald-100 bg-white p-4 sm:p-5"
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-sm font-bold text-navy">Request progress</h2>
-          <p className="mt-1 text-xs leading-5 text-slate-600">{getStageDescription(ticket)}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-600">{getStageDescription(ticket, department)}</p>
         </div>
         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${rejected ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-800"}`}>
           {ticket.status.replaceAll("_", " ")}
