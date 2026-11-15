@@ -33,6 +33,7 @@ Implemented in the current prototype:
 - Assignment, priority, status changes, comments, and internal notes.
 - Dashboard ticket counts, incoming queue, assigned view, overdue list, and a triage inbox with server-side search, filters, pagination, and saved views.
 - In-app notifications, unread counts, mark-read actions, and per-user notification preferences.
+- Requester email when a provider moves a ticket to In Progress (requires Resend configuration).
 - Ticket reports with date, status, and service-team filters; paginated results; admin CSV export; and workload/SLA indicators.
 - Role-based navigation and initial row-level security policies in the SQL schema.
 - Vitest unit tests for priority/SLA calculations and ticket-draft storage, plus a pgTAP RLS suite in `supabase/tests/`.
@@ -59,6 +60,10 @@ Still incomplete or needing confirmation:
 - **Supabase PostgreSQL** stores profiles, roles, tickets, comments, and reference data.
 - **Row Level Security (RLS)** applies database access rules to signed-in users.
 - **Supabase Storage** keeps ticket attachments private; ticket-scoped policies and expiring download links control access.
+
+### Ticket status email
+
+When a provider changes a ticket to **In Progress**, the server emails its requester using Resend. Configure `RESEND_API_KEY` and `TICKET_EMAIL_FROM` in the server environment (for local development, `.env.local`). `TICKET_EMAIL_FROM` must use a sender/domain verified in Resend. These values are server-only; do not use a `NEXT_PUBLIC_` prefix. If either value is missing, ticket status updates still work and the staff member sees that email is not configured. Email delivery failures do not undo a saved status change.
 
 Legacy project, department, discipline, category, and routing tables remain in the database for historical records. The app no longer reads or manages them; the final removal migration disables automatic routing and project approval gates without deleting stored records.
 

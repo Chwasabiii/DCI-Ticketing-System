@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { calculateTicketPriority } from "@/lib/utils";
 import { getSiteOrigin } from "@/lib/site-url";
+import { sendTicketInProgressEmail } from "@/lib/ticket-email";
 import type {
   Comment,
   EmployeeRole,
@@ -921,7 +922,7 @@ export async function updateTicketStatus(formData: FormData) {
 
   const { data: ticketForResolution, error: ticketForResolutionError } = await supabase
     .from("tickets")
-    .select("request_type, service_team_id, is_confidential, assigned_to, status, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_database_result, ccg_followup_type, ccg_followup_status")
+    .select("ticket_no, title, requester_id, request_type, service_team_id, is_confidential, assigned_to, status, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_database_result, ccg_followup_type, ccg_followup_status")
     .eq("id", ticketId)
     .maybeSingle();
   if (ticketForResolutionError) return { error: ticketForResolutionError.message };
@@ -1017,12 +1018,28 @@ export async function updateTicketStatus(formData: FormData) {
   if (error) return { error: error.message };
   if (!data) return { error: "You do not have permission to update this ticket." };
 
+  let emailNotice = "";
+  if (status === "in_progress" && ticketForResolution.status !== "in_progress") {
+    const { data: requester } = await supabase.from("profiles")
+      .select("email, full_name").eq("id", ticketForResolution.requester_id).maybeSingle();
+    if (requester?.email) {
+      const emailResult = await sendTicketInProgressEmail({
+        to: requester.email,
+        requesterName: requester.full_name,
+        ticketNumber: ticketForResolution.ticket_no,
+        title: ticketForResolution.title
+      });
+      if (emailResult === "not_configured") emailNotice = " Email notification is not configured yet.";
+      if (emailResult === "failed") emailNotice = " The status changed, but the email could not be sent.";
+    }
+  }
+
   revalidatePath(`/tickets/${ticketId}`);
   revalidatePath("/dashboard");
   revalidatePath("/queue");
   revalidatePath("/inbox");
   revalidatePath("/cost-control");
-  return { success: "Ticket status updated." };
+  return { success: `Ticket status updated.${emailNotice}` };
 }
 
 export async function escalateIncidentToSoftwareCsr(formData: FormData) {
