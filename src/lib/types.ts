@@ -24,6 +24,7 @@ export type TicketStatus =
   | "rejected";
 
 export type Priority = "low" | "medium" | "high" | "urgent";
+export type TicketPriority = Priority;
 export type TicketImpact = "low" | "medium" | "high";
 export type TicketUrgency = "low" | "medium" | "high";
 
@@ -123,6 +124,9 @@ export type Ticket = {
   created_at?: string | null;
   reopened_at?: string | null;
   resolved_at?: string | null;
+  closed_at?: string | null;
+  archived_at?: string | null;
+  delete_after?: string | null;
   first_response_at?: string | null;
   updated_at?: string | null;
   requester?: ProfileSummary | null;

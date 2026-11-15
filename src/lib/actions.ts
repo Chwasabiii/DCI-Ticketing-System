@@ -889,7 +889,7 @@ export async function updateTicketStatus(formData: FormData) {
         p_reason: reason
       });
       if (error) return { error: error.message };
-      if (reopened !== true) return { error: "Only your own resolved or closed ticket can be reopened." };
+      if (reopened !== true) return { error: "Only your own ticket can be reopened, and the reopen window may have ended." };
       revalidatePath(`/tickets/${ticketId}`);
       revalidatePath("/tickets");
       revalidatePath("/dashboard");

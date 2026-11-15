@@ -52,6 +52,10 @@ export function TicketListTable({ tickets, createTicketHref }: { tickets: Ticket
   const statusFilter = params.get("status") ?? "";
   const priorityFilter = params.get("priority") ?? "";
   const categoryFilter = params.get("category") ?? "";
+  const requestedArchiveFilter = params.get("archive") ?? "current";
+  const archiveFilter = ["current", "archived", "all"].includes(requestedArchiveFilter)
+    ? requestedArchiveFilter
+    : "current";
   const sortValue = params.get("sort");
   const sortBy: SortOption = sortOptions.includes(sortValue as SortOption) ? sortValue as SortOption : "updated";
   const requestedPage = Number.parseInt(params.get("page") ?? "1", 10);
@@ -65,6 +69,7 @@ export function TicketListTable({ tickets, createTicketHref }: { tickets: Ticket
     return (!statusFilter || ticket.status === statusFilter)
       && (!priorityFilter || ticket.priority === priorityFilter)
       && (!categoryFilter || ticket.service_category === categoryFilter)
+      && (archiveFilter === "all" || (archiveFilter === "archived") === Boolean(ticket.archived_at))
       && (!normalizedQuery || searchableFields.some((value) => value?.toLocaleLowerCase().includes(normalizedQuery)));
   }).sort((a, b) => {
     if (sortBy === "priority") {
@@ -131,6 +136,12 @@ export function TicketListTable({ tickets, createTicketHref }: { tickets: Ticket
             <option value="">All categories</option>
             {categories.map((category) => <option key={category} value={category}>{titleCase(category)}</option>)}
           </select>
+          <label className="sr-only" htmlFor="ticket-archive-filter">Filter by archive status</label>
+          <select id="ticket-archive-filter" value={archiveFilter} onChange={(event) => updateParams({ archive: event.target.value })} className={selectClassName}>
+            <option value="current">Current tickets</option>
+            <option value="archived">Archived tickets</option>
+            <option value="all">All tickets</option>
+          </select>
           <label className="sr-only" htmlFor="ticket-sort">Sort tickets</label>
           <select id="ticket-sort" value={sortBy} onChange={(event) => updateParams({ sort: event.target.value })} className={selectClassName}>
             <option value="updated">Last updated</option>
@@ -150,7 +161,7 @@ export function TicketListTable({ tickets, createTicketHref }: { tickets: Ticket
       ) : visibleTickets.length === 0 ? (
         <div className="flex flex-wrap items-center gap-2 px-4 py-8 text-sm text-muted">
           <p>No tickets match these filters.</p>
-          <button type="button" onClick={() => updateParams({ q: "", status: "", priority: "", category: "" })} className="focus-ring rounded-control px-2 py-1 font-medium text-primary transition-colors duration-150 hover:bg-neutral-50">Clear filters</button>
+          <button type="button" onClick={() => updateParams({ q: "", status: "", priority: "", category: "", archive: "current" })} className="focus-ring rounded-control px-2 py-1 font-medium text-primary transition-colors duration-150 hover:bg-neutral-50">Clear filters</button>
         </div>
       ) : (
         <>
@@ -169,6 +180,7 @@ export function TicketListTable({ tickets, createTicketHref }: { tickets: Ticket
                     <span className="mt-1 block truncate text-sm font-medium text-ink">{ticket.title}</span>
                     <span className="mt-2 flex flex-wrap items-center gap-1.5">
                       <StatusBadge value={ticket.status} />
+                      {ticket.archived_at && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Archived</span>}
                       <PriorityBadge value={ticket.priority} />
                       <span className="text-xs text-muted">{categoryLabel(ticket.service_category)}</span>
                       <span className="ml-auto max-w-32 truncate text-xs text-muted">{assignee}</span>
@@ -207,7 +219,7 @@ export function TicketListTable({ tickets, createTicketHref }: { tickets: Ticket
                       <td className="px-3 py-2.5">
                         <Link href={`/tickets/${ticket.id}`} className="focus-ring block truncate font-medium text-ink hover:text-primary" title={ticket.title}>{ticket.title}</Link>
                       </td>
-                      <td className="px-3 py-2.5"><StatusBadge value={ticket.status} /></td>
+                      <td className="px-3 py-2.5"><div className="flex items-center gap-1.5"><StatusBadge value={ticket.status} />{ticket.archived_at && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">Archived</span>}</div></td>
                       <td className="px-3 py-2.5"><PriorityBadge value={ticket.priority} /></td>
                       <td className="truncate px-3 py-2.5 text-sm text-ink" title={categoryLabel(ticket.service_category)}>{categoryLabel(ticket.service_category)}</td>
                       <td className="truncate px-3 py-2.5 text-sm text-muted" title={assignee}>{assignee}</td>

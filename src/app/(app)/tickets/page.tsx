@@ -8,7 +8,7 @@ import { measureTiming } from "@/lib/supabase/timing";
 
 async function TicketWorkloadSection({ currentUserId, canCreateTickets }: { currentUserId?: string; canCreateTickets: boolean }) {
   const [tickets, slaPolicies] = await Promise.all([
-    measureTiming("/tickets", "tickets.list", () => getTickets(100)),
+    measureTiming("/tickets", "tickets.list", () => getTickets(undefined, true)),
     measureTiming("/tickets", "tickets.sla-policies", getTicketSlaPolicies)
   ]);
   return <TicketWorkloadView tickets={tickets} currentUserId={currentUserId} slaPolicies={slaPolicies} canCreateTickets={canCreateTickets} />;

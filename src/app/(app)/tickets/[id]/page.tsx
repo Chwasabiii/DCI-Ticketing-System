@@ -207,6 +207,7 @@ export default async function TicketDetailPage({
               {ticket.service_category && <Badge value={ticket.service_category} />}
               <Badge value={ticket.status} />
               <Badge value={ticket.priority} />
+              {ticket.archived_at && <Badge value="Archived" />}
             </div>
           </div>
           <dl className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -225,6 +226,12 @@ export default async function TicketDetailPage({
               </div>
             ))}
           </dl>
+          {ticket.archived_at && (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <p className="font-semibold">This ticket is archived.</p>
+              <p className="mt-1 text-xs">Scheduled for permanent deletion on {ticket.delete_after ? formatDateTime(ticket.delete_after) : "a later date"}.</p>
+            </div>
+          )}
           {ticket.ccg_request_type && (
             <section className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 sm:p-5">
               <h2 className="text-xs font-bold uppercase tracking-[0.12em] text-emerald-800">CCG request workflow</h2>

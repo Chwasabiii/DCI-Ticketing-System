@@ -95,19 +95,31 @@ export const getCurrentContext = cache(async function getCurrentContext() {
   };
 });
 
-export async function getTickets(limit = 50) {
+export async function getTickets(limit?: number, includeArchived = false) {
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("tickets")
-    .select(
-      "id, ticket_no, title, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, first_response_at"
-    )
-    .order("created_at", { ascending: false })
-    .limit(limit)
-    .returns<Ticket[]>();
+  const pageSize = limit ?? 1000;
+  const loaded: Array<Ticket & { retention?: { archived_at: string; delete_after: string } | null }> = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("tickets")
+      .select(
+        "id, ticket_no, title, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, is_confidential, requester_id, assigned_to, service_team_id, due_date, created_at, reopened_at, updated_at, resolved_at, closed_at, first_response_at, retention:ticket_retention(archived_at,delete_after)"
+      )
+      .order("created_at", { ascending: false })
+      .range(offset, offset + pageSize - 1)
+      .returns<Array<Ticket & { retention?: { archived_at: string; delete_after: string } | null }>>();
 
-  if (error) throw new Error(`Could not load tickets: ${error.message}`);
-  return data ?? [];
+    if (error) throw new Error(`Could not load tickets: ${error.message}`);
+    loaded.push(...(data ?? []));
+    if (limit !== undefined || !data || data.length < pageSize) break;
+  }
+
+  const tickets = loaded.map(({ retention, ...ticket }) => ({
+    ...ticket,
+    archived_at: retention?.archived_at ?? null,
+    delete_after: retention?.delete_after ?? null
+  }));
+  return includeArchived ? tickets : tickets.filter((ticket) => !ticket.archived_at);
 }
 
 const queueTicketSelection = "id, ticket_no, title, status, priority, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, request_type, service_category, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, is_confidential, assigned_to, due_date, created_at, reopened_at, resolved_at, first_response_at, resolution_notes";
@@ -352,11 +364,13 @@ export async function getTicket(id: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from("tickets")
-    .select("id, ticket_no, title, description, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, is_confidential, request_type, service_category, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_procurement_in_scope, ccg_database_result, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, requester_id, assigned_to, service_team_id, service_team:service_teams(id, name, slug), resolution_notes, due_date, created_at, reopened_at, resolved_at, first_response_at, updated_at")
+    .select("id, ticket_no, title, description, status, priority, impact, urgency, reported_impact, reported_urgency, priority_reviewed_at, priority_reviewed_by, is_confidential, request_type, service_category, ccg_request_type, ccg_request_types, ccg_request_scope, ccg_procurement_in_scope, ccg_database_result, ccg_followup_type, ccg_followup_status, ccg_stage_due_at, ccg_vendor_expected_at, ccg_vendor_due_at, ccg_vendor_wait_started_at, ccg_vendor_wait_seconds, ccg_requester_wait_started_at, ccg_requester_wait_seconds, requester_id, assigned_to, service_team_id, service_team:service_teams(id, name, slug), resolution_notes, due_date, created_at, reopened_at, resolved_at, closed_at, first_response_at, updated_at, retention:ticket_retention(archived_at,delete_after)")
     .eq("id", id)
-    .single<Ticket>();
+    .single<Ticket & { retention?: { archived_at: string; delete_after: string } | null }>();
 
-  return data;
+  if (!data) return data;
+  const { retention, ...ticket } = data;
+  return { ...ticket, archived_at: retention?.archived_at ?? null, delete_after: retention?.delete_after ?? null };
 }
 
 export async function getTicketFeedback(ticketId: string) {

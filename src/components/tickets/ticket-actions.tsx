@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { BookOpen, CheckCircle2, Forward, RotateCcw, Route, Save } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { useConfirmDialog } from "@/components/ui/use-confirm-dialog";
 import { PriorityMatrixGuide } from "@/components/tickets/priority-matrix-guide";
 import { createFaqDraftFromTicket, escalateIncidentToSoftwareCsr, routeTicket, updateTicketStatus } from "@/lib/actions";
 import { calculateTicketPriority } from "@/lib/utils";
+import { getTicketReopenDeadline, getTicketReopenWindowDays } from "@/lib/ticket-retention";
 import type { CcgDatabaseResult, CcgFollowupStatus, EmployeeRole, Profile, Ticket, TicketImpact, TicketStatus, TicketUrgency } from "@/lib/types";
 
 const ticketStatuses: TicketStatus[] = [
@@ -21,6 +22,14 @@ const ticketStatuses: TicketStatus[] = [
   "closed",
   "rejected"
 ];
+
+function formatCountdown(milliseconds: number) {
+  const totalMinutes = Math.max(0, Math.floor(milliseconds / 60_000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  return `${days}d ${hours}h ${minutes}m`;
+}
 
 export function TicketActions({
   ticket,
@@ -79,6 +88,21 @@ export function TicketActions({
     && ticket.status === "in_progress";
   const isClient = profile.user_side === "client";
   const isRequester = ticket.requester_id === profile.id;
+  const showReopenWindow = isClient && isRequester && ["resolved", "closed"].includes(ticket.status);
+  const reopenDeadline = getTicketReopenDeadline(ticket);
+  const reopenWindowDays = getTicketReopenWindowDays(ticket.priority);
+  const [reopenClock, setReopenClock] = useState(0);
+  useEffect(() => {
+    if (!showReopenWindow) return;
+    const updateClock = () => setReopenClock(Date.now());
+    updateClock();
+    const interval = window.setInterval(updateClock, 1000);
+    return () => window.clearInterval(interval);
+  }, [showReopenWindow]);
+  const reopenRemainingMs = reopenDeadline && reopenClock
+    ? Math.max(0, Date.parse(reopenDeadline) - reopenClock)
+    : null;
+  const canReopen = showReopenWindow && reopenRemainingMs !== null && reopenRemainingMs > 0;
   const activeTicket = !["resolved", "closed", "rejected"].includes(ticket.status);
   const ccgRequestTypes = ticket.ccg_request_types?.length
     ? ticket.ccg_request_types
@@ -128,8 +152,7 @@ export function TicketActions({
     ? "assigned"
     : ticket.status;
 
-  const canReopen = isClient && isRequester && ["resolved", "closed"].includes(ticket.status);
-  if (!canRoute && !canResolve && !(isClient && isRequester && ticket.status === "resolved") && !canReopen && !canCreateFaqDraft) {
+  if (!canRoute && !canResolve && !(isClient && isRequester && ticket.status === "resolved") && !showReopenWindow && !canCreateFaqDraft) {
     return null;
   }
 
@@ -455,6 +478,19 @@ export function TicketActions({
                 Confirm completion
               </Button>
             </form>
+          )}
+          {showReopenWindow && (
+            <div className="mb-3 rounded-xl border border-amber-200/80 bg-amber-50/70 p-4">
+              <p className="text-sm font-semibold text-navy">
+                {reopenRemainingMs === null
+                  ? `Reopen window: ${reopenWindowDays} days after resolution.`
+                  : reopenRemainingMs > 0
+                    ? `Time left to reopen: ${formatCountdown(reopenRemainingMs)}`
+                    : "The reopen window has ended."}
+              </p>
+              {reopenDeadline && <p className="mt-1 text-xs text-slate-600">Reopen by {new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Manila" }).format(new Date(reopenDeadline))} (Manila time).</p>}
+              {!reopenDeadline && <p className="mt-1 text-xs text-slate-600">The resolution date is unavailable. Contact the service team if you still need help.</p>}
+            </div>
           )}
           {canReopen && (
             <form onSubmit={handleStatusUpdate} className="grid gap-3 rounded-xl border border-amber-200/80 bg-amber-50/70 p-4">

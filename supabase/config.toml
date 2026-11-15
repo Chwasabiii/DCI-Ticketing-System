@@ -1,0 +1,4 @@
+project_id = "pmsg-desk"
+
+[functions.ticket-retention]
+verify_jwt = false
