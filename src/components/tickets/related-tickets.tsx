@@ -120,7 +120,7 @@ export function RelatedTickets({
             name="related_ticket_no"
             required
             maxLength={40}
-            placeholder="Ticket number, e.g. DCI-2026-0012"
+            placeholder="Ticket number, e.g. IT-2026-0012 or CCG-2026-0013"
             disabled={busy}
             className="min-h-10 min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm focus-ring"
           />
