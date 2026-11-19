@@ -653,7 +653,9 @@ export async function createTicket(formData: FormData) {
       service_category: serviceCategory,
       ccg_request_type: serviceTeam.slug === "cost-control" ? ccgRequestType : null,
       ccg_request_types: serviceTeam.slug === "cost-control" ? ccgRequestTypes : [],
-      ccg_request_scope: serviceTeam.slug === "cost-control" && ccgRequestType === "unit_rate" ? ccgRequestScope : null,
+      // The database policy requires a scope whenever Unit rate is selected,
+      // even when another selected service becomes the primary request type.
+      ccg_request_scope: serviceTeam.slug === "cost-control" && ccgRequestTypes.includes("unit_rate") ? ccgRequestScope : null,
       ccg_procurement_in_scope: serviceTeam.slug === "cost-control" ? false : null,
       impact: effectiveImpact,
       urgency: effectiveUrgency,
@@ -671,8 +673,11 @@ export async function createTicket(formData: FormData) {
 
   if (error || !ticket) {
     if (error?.code === "42501") {
+      const accessSideLabel = currentSide === "client"
+        ? "Employee/end user (internal account type: client)"
+        : currentSide;
       return {
-        error: `Supabase denied ticket creation: ${error.message} (database role: ${currentSide}, profile status: ${requesterProfile.status}, account type: ${requesterProfile.user_side}). This can be caused by either the tickets INSERT policy or the SELECT policy needed to return the new ticket. Check the Supabase database logs before changing policies.`
+        error: `Supabase denied ticket creation: ${error.message} (database access side: ${accessSideLabel}, profile status: ${requesterProfile.status}, profile account type: Employee/end user [${requesterProfile.user_side}]). This can be caused by either the tickets INSERT policy or the SELECT policy needed to return the new ticket. Check the Supabase database logs before changing policies.`
       };
     }
     return { error: error?.message ?? "The ticket could not be created." };
