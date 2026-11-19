@@ -11,7 +11,7 @@ export default async function SettingsPage() {
   ]);
   const holidays = profile?.user_side === "admin" ? await getCcgBusinessHolidays() : [];
   const displayName = profile?.full_name ?? profile?.email ?? "PMSG user";
-  const accountType = profile?.user_side === "client" ? "End user" : profile?.user_side === "employee" ? "Service provider" : "Administrator";
+  const accountType = profile?.user_side === "client" ? "Employee" : profile?.user_side === "employee" ? "Service provider" : "Administrator";
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-8">

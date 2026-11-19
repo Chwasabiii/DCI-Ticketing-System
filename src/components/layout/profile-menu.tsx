@@ -19,7 +19,7 @@ export function ProfileMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const displayRole = profile?.user_side === "employee"
     ? `${profile.service_team?.name ?? "Service Provider"}${roles.length ? ` · ${roles.join(", ")}` : ""}`
-    : profile?.user_side === "client" ? "End user" : profile?.user_side === "admin" ? "Admin" : "";
+    : profile?.user_side === "client" ? "Employee" : profile?.user_side === "admin" ? "Admin" : "";
   const displayName = profile?.full_name ?? "PMSG User";
 
   useEffect(() => {
